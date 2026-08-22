@@ -1,1 +1,141 @@
-
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenWeatherMap (Startup plan)",
+        "description": "Requires an API key on a plan that includes the 16-day daily forecast endpoint. The free tier does not.\n\nWeather data © OpenWeather, licensed under the Open Database License (ODbL). You must display attribution wherever this data is shown, and any database you derive from it and distribute must be offered under the same licence.",
+        "data": {
+          "name": "Name",
+          "api_key": "API key",
+          "location": "Location",
+          "language": "Language"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate OpenWeatherMap",
+        "description": "The API key was rejected. Enter a valid key.",
+        "data": {
+          "api_key": "API key"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The key was rejected. Check that it is active and that your plan includes the daily forecast endpoint.",
+      "cannot_connect": "Could not reach OpenWeatherMap.",
+      "rate_limited": "The account has exceeded its call allowance."
+    },
+    "abort": {
+      "already_configured": "This location is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "language": "Language",
+          "basemap_url": "Basemap tile URL",
+          "basemap_attribution": "Basemap attribution",
+          "contrast_stretch": "Stretch map contrast"
+        },
+        "description": "Weather data © OpenWeather, licensed under ODbL.\n\nForecast length, air quality windows and the update interval are fixed at the values the Startup plan supports: 16-day daily forecast, 120-hour 3-hourly forecast, air quality peaks for today and tomorrow, and hourly updates.",
+        "data_description": {
+          "basemap_url": "Tile template with {z}, {x} and {y} placeholders, drawn behind the weather maps. Defaults to the CARTO style Home Assistant itself uses. Leave empty for no basemap. Do not point this at tile.openstreetmap.org: their usage policy forbids it.",
+          "basemap_attribution": "Burned into the corner of every map image. Update this if you change the basemap URL.",
+          "contrast_stretch": "OpenWeather's palettes cover the whole globe, so across a 200 km view the colours barely change. With this on, the values present in the view are re-mapped across a full colour ramp and the legend follows. Turn it off for OpenWeather's own colours."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "air_quality_index": {
+        "name": "Air quality index",
+        "state_attributes": {
+          "level": {
+            "name": "Level",
+            "state": {
+              "good": "Good",
+              "fair": "Fair",
+              "moderate": "Moderate",
+              "poor": "Poor",
+              "very_poor": "Very poor"
+            }
+          }
+        }
+      },
+      "air_quality_index_forecast_today": {
+        "name": "Air quality index forecast today"
+      },
+      "air_quality_index_forecast_tomorrow": {
+        "name": "Air quality index forecast tomorrow"
+      },
+      "carbon_monoxide": {
+        "name": "Carbon monoxide"
+      },
+      "carbon_monoxide_forecast_today": {
+        "name": "Carbon monoxide forecast today"
+      },
+      "carbon_monoxide_forecast_tomorrow": {
+        "name": "Carbon monoxide forecast tomorrow"
+      },
+      "ammonia": {
+        "name": "Ammonia"
+      },
+      "ammonia_forecast_today": {
+        "name": "Ammonia forecast today"
+      },
+      "ammonia_forecast_tomorrow": {
+        "name": "Ammonia forecast tomorrow"
+      },
+      "pm2_5_forecast_today": {
+        "name": "PM2.5 forecast today"
+      },
+      "pm2_5_forecast_tomorrow": {
+        "name": "PM2.5 forecast tomorrow"
+      },
+      "pm10_forecast_today": {
+        "name": "PM10 forecast today"
+      },
+      "pm10_forecast_tomorrow": {
+        "name": "PM10 forecast tomorrow"
+      },
+      "o3_forecast_today": {
+        "name": "Ozone forecast today"
+      },
+      "o3_forecast_tomorrow": {
+        "name": "Ozone forecast tomorrow"
+      },
+      "no2_forecast_today": {
+        "name": "Nitrogen dioxide forecast today"
+      },
+      "no2_forecast_tomorrow": {
+        "name": "Nitrogen dioxide forecast tomorrow"
+      },
+      "no_forecast_today": {
+        "name": "Nitrogen monoxide forecast today"
+      },
+      "no_forecast_tomorrow": {
+        "name": "Nitrogen monoxide forecast tomorrow"
+      },
+      "so2_forecast_today": {
+        "name": "Sulphur dioxide forecast today"
+      },
+      "so2_forecast_tomorrow": {
+        "name": "Sulphur dioxide forecast tomorrow"
+      }
+    },
+    "image": {
+      "temperature_map": {
+        "name": "Temperature map"
+      },
+      "clouds_map": {
+        "name": "Cloud map"
+      },
+      "precipitation_map": {
+        "name": "Precipitation map"
+      }
+    }
+  }
+}

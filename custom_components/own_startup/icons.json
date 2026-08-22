@@ -1,0 +1,80 @@
+{
+  "entity": {
+    "sensor": {
+      "air_quality_index": {
+        "default": "mdi:air-filter"
+      },
+      "air_quality_index_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "air_quality_index_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "carbon_monoxide": {
+        "default": "mdi:molecule-co"
+      },
+      "carbon_monoxide_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "carbon_monoxide_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "ammonia": {
+        "default": "mdi:molecule"
+      },
+      "ammonia_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "ammonia_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "pm2_5_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "pm2_5_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "pm10_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "pm10_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "o3_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "o3_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "no2_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "no2_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "no_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "no_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "so2_forecast_today": {
+        "default": "mdi:chart-timeline-variant"
+      },
+      "so2_forecast_tomorrow": {
+        "default": "mdi:chart-timeline-variant"
+      }
+    },
+    "image": {
+      "temperature_map": {
+        "default": "mdi:thermometer"
+      },
+      "clouds_map": {
+        "default": "mdi:weather-cloudy"
+      },
+      "precipitation_map": {
+        "default": "mdi:weather-pouring"
+      }
+    }
+  }
+}
