@@ -1,0 +1,42 @@
+{
+  "coord": {
+    "lon": 4.49,
+    "lat": 52.06
+  },
+  "weather": [
+    {
+      "id": 802,
+      "main": "Clouds",
+      "description": "scattered clouds",
+      "icon": "03d"
+    }
+  ],
+  "base": "stations",
+  "main": {
+    "temp": 19.4,
+    "feels_like": 19.1,
+    "temp_min": 18.2,
+    "temp_max": 20.6,
+    "pressure": 1013,
+    "humidity": 72
+  },
+  "visibility": 10000,
+  "wind": {
+    "speed": 4.1,
+    "deg": 230,
+    "gust": 8.2
+  },
+  "clouds": {
+    "all": 40
+  },
+  "dt": 1755800000,
+  "sys": {
+    "country": "NL",
+    "sunrise": 1755792800,
+    "sunset": 1755818000
+  },
+  "timezone": 7200,
+  "id": 2743477,
+  "name": "Zoetermeer",
+  "cod": 200
+}
