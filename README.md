@@ -58,7 +58,7 @@ nobody is looking.
 - An OpenWeatherMap API key on a plan that includes `/forecast/daily`. The free
   tier does **not**; Startup and above do. Uploading your own station data and
   then asking at info@openweathermap.org is one route onto the Startup plan —
-  see the [wiki](https://github.com/lancer73/owm_startup/blob/main/wiki/Home.md).
+  see the [wiki](https://github.com/lancer73/owm_startup/wiki).
 
 ## Development
 
