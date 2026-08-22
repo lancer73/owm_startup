@@ -1,1 +1,141 @@
-
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenWeatherMap (Startup-abonnement)",
+        "description": "Vereist een API-sleutel op een abonnement met het endpoint voor de daglijkse voorspelling van 16 dagen. Het gratis abonnement bevat dit niet.\n\nWeergegevens © OpenWeather, gelicentieerd onder de Open Database License (ODbL). Vermelding is verplicht overal waar deze gegevens worden getoond, en een afgeleide database die je verspreidt moet onder dezelfde licentie worden aangeboden.",
+        "data": {
+          "name": "Naam",
+          "api_key": "API-sleutel",
+          "location": "Locatie",
+          "language": "Taal"
+        }
+      },
+      "reauth_confirm": {
+        "title": "OpenWeatherMap opnieuw verifiëren",
+        "description": "De API-sleutel is geweigerd. Voer een geldige sleutel in.",
+        "data": {
+          "api_key": "API-sleutel"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "De sleutel is geweigerd. Controleer of deze actief is en of het abonnement het daglijkse voorspellings-endpoint bevat.",
+      "cannot_connect": "Kan OpenWeatherMap niet bereiken.",
+      "rate_limited": "Het account heeft het aantal toegestane aanroepen overschreden."
+    },
+    "abort": {
+      "already_configured": "Deze locatie is al geconfigureerd.",
+      "reauth_successful": "Opnieuw verifiëren is gelukt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opties",
+        "data": {
+          "language": "Taal",
+          "basemap_url": "Basiskaart tile-URL",
+          "basemap_attribution": "Bronvermelding basiskaart",
+          "contrast_stretch": "Kaartcontrast oprekken"
+        },
+        "description": "Weergegevens © OpenWeather, gelicentieerd onder ODbL.\n\nVoorspellingslengte, luchtkwaliteitsvensters en het verversinterval liggen vast op de waarden die het Startup-abonnement ondersteunt: 16-daagse voorspelling, 3-uurlijkse voorspelling van 120 uur, luchtkwaliteitspieken voor vandaag en morgen, en updates per uur.",
+        "data_description": {
+          "basemap_url": "Tile-sjabloon met {z}, {x} en {y} als plaatshouders, getekend achter de weerkaarten. Standaard de CARTO-stijl die Home Assistant zelf gebruikt. Laat leeg voor geen basiskaart. Richt dit niet op tile.openstreetmap.org: hun gebruiksvoorwaarden verbieden dat.",
+          "basemap_attribution": "Wordt in de hoek van elke kaartafbeelding gezet. Pas dit aan als je de basiskaart-URL wijzigt.",
+          "contrast_stretch": "De paletten van OpenWeather bestrijken de hele wereld, dus over een beeld van 200 km veranderen de kleuren nauwelijks. Hiermee worden de waarden in beeld over een volledig kleurverloop verdeeld en volgt de legenda. Zet uit voor de eigen kleuren van OpenWeather."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "air_quality_index": {
+        "name": "Luchtkwaliteitsindex",
+        "state_attributes": {
+          "level": {
+            "name": "Niveau",
+            "state": {
+              "good": "Goed",
+              "fair": "Redelijk",
+              "moderate": "Matig",
+              "poor": "Slecht",
+              "very_poor": "Zeer slecht"
+            }
+          }
+        }
+      },
+      "air_quality_index_forecast_today": {
+        "name": "Luchtkwaliteitsindex voorspelling vandaag"
+      },
+      "air_quality_index_forecast_tomorrow": {
+        "name": "Luchtkwaliteitsindex voorspelling morgen"
+      },
+      "carbon_monoxide": {
+        "name": "Koolmonoxide"
+      },
+      "carbon_monoxide_forecast_today": {
+        "name": "Koolmonoxide voorspelling vandaag"
+      },
+      "carbon_monoxide_forecast_tomorrow": {
+        "name": "Koolmonoxide voorspelling morgen"
+      },
+      "ammonia": {
+        "name": "Ammoniak"
+      },
+      "ammonia_forecast_today": {
+        "name": "Ammoniak voorspelling vandaag"
+      },
+      "ammonia_forecast_tomorrow": {
+        "name": "Ammoniak voorspelling morgen"
+      },
+      "pm2_5_forecast_today": {
+        "name": "PM2,5 voorspelling vandaag"
+      },
+      "pm2_5_forecast_tomorrow": {
+        "name": "PM2,5 voorspelling morgen"
+      },
+      "pm10_forecast_today": {
+        "name": "PM10 voorspelling vandaag"
+      },
+      "pm10_forecast_tomorrow": {
+        "name": "PM10 voorspelling morgen"
+      },
+      "o3_forecast_today": {
+        "name": "Ozon voorspelling vandaag"
+      },
+      "o3_forecast_tomorrow": {
+        "name": "Ozon voorspelling morgen"
+      },
+      "no2_forecast_today": {
+        "name": "Stikstofdioxide voorspelling vandaag"
+      },
+      "no2_forecast_tomorrow": {
+        "name": "Stikstofdioxide voorspelling morgen"
+      },
+      "no_forecast_today": {
+        "name": "Stikstofmonoxide voorspelling vandaag"
+      },
+      "no_forecast_tomorrow": {
+        "name": "Stikstofmonoxide voorspelling morgen"
+      },
+      "so2_forecast_today": {
+        "name": "Zwaveldioxide voorspelling vandaag"
+      },
+      "so2_forecast_tomorrow": {
+        "name": "Zwaveldioxide voorspelling morgen"
+      }
+    },
+    "image": {
+      "temperature_map": {
+        "name": "Temperatuurkaart"
+      },
+      "clouds_map": {
+        "name": "Bewolkingskaart"
+      },
+      "precipitation_map": {
+        "name": "Neerslagkaart"
+      }
+    }
+  }
+}
