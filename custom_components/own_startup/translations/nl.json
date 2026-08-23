@@ -39,7 +39,7 @@
           "basemap_attribution": "Bronvermelding basiskaart",
           "contrast_stretch": "Kaartcontrast oprekken"
         },
-        "description": "Weergegevens © OpenWeather, gelicentieerd onder ODbL.\n\nVoorspellingslengte, luchtkwaliteitsvensters en het verversinterval liggen vast op de waarden die het Startup-abonnement ondersteunt: 16-daagse voorspelling, 3-uurlijkse voorspelling van 120 uur, luchtkwaliteitspieken voor vandaag en morgen, en updates per uur.",
+        "description": "Weergegevens © OpenWeather, gelicentieerd onder ODbL.\n\nVoorspellingslengte, luchtkwaliteitsvensters en het verversinterval liggen vast op de waarden die het Startup-abonnement ondersteunt: 16-daagse voorspelling, 3-uurlijkse voorspelling van 120 uur, luchtkwaliteitspieken voor vandaag en morgen, en updates elke 30 minuten.",
         "data_description": {
           "basemap_url": "Tile-sjabloon met {z}, {x} en {y} als plaatshouders, getekend achter de weerkaarten. Standaard de CARTO-stijl die Home Assistant zelf gebruikt. Laat leeg voor geen basiskaart. Richt dit niet op tile.openstreetmap.org: hun gebruiksvoorwaarden verbieden dat.",
           "basemap_attribution": "Wordt in de hoek van elke kaartafbeelding gezet. Pas dit aan als je de basiskaart-URL wijzigt.",
@@ -65,11 +65,41 @@
           }
         }
       },
+      "air_quality_level": {
+        "name": "Luchtkwaliteit",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
+      },
       "air_quality_index_forecast_today": {
         "name": "Luchtkwaliteitsindex voorspelling vandaag"
       },
+      "air_quality_level_today": {
+        "name": "Luchtkwaliteit vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
+      },
       "air_quality_index_forecast_tomorrow": {
         "name": "Luchtkwaliteitsindex voorspelling morgen"
+      },
+      "air_quality_level_tomorrow": {
+        "name": "Luchtkwaliteit morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
       "carbon_monoxide": {
         "name": "Koolmonoxide"
@@ -132,9 +162,6 @@
       },
       "clouds_map": {
         "name": "Bewolkingskaart"
-      },
-      "precipitation_map": {
-        "name": "Neerslagkaart"
       }
     }
   }
