@@ -5,6 +5,10 @@ Three sets of entities are created:
   - forecast air quality for the rest of today
   - forecast air quality for tomorrow
 
+Each of those three also gets a text entity carrying OpenWeather's qualitative
+band for the index -- Good through Very Poor -- as an enum sensor, so it can be
+used in templates and shown on a dashboard without mapping 1-5 by hand.
+
 Forecast entities report the worst (highest) value expected inside their
 window, with the local time of that peak as an attribute. Windows are local
 calendar days, so today's shortens as the day goes on.
@@ -42,6 +46,8 @@ from .const import (
 from .coordinator import OwmStartupCoordinator
 
 AQI_KEY = "aqi"
+
+AQI_OPTIONS = list(AQI_LABELS.values())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -131,12 +137,21 @@ async def async_setup_entry(
         OwmAirQualitySensor(coordinator, entry, description)
         for description in SENSOR_TYPES
     ]
+    entities.append(OwmAirQualityLabelSensor(coordinator, entry, AQI_DESCRIPTION))
     for day_offset in AQ_FORECAST_DAYS:
         entities.extend(
             OwmAirQualityForecastSensor(coordinator, entry, description, day_offset)
             for description in SENSOR_TYPES
         )
+        entities.append(
+            OwmAirQualityForecastLabelSensor(
+                coordinator, entry, AQI_DESCRIPTION, day_offset
+            )
+        )
     async_add_entities(entities)
+
+
+AQI_DESCRIPTION = SENSOR_TYPES[0]
 
 
 def _local_iso(timestamp: int) -> str:
@@ -311,4 +326,67 @@ class OwmAirQualityForecastSensor(OwmAirBaseSensor):
                 }
                 for entry in window
             ]
+        return attributes
+
+
+class OwmAirQualityLabelSensor(OwmAirQualitySensor):
+    """OpenWeather's qualitative band for the current index."""
+
+    def __init__(
+        self,
+        coordinator: OwmStartupCoordinator,
+        entry: ConfigEntry,
+        description: OwmAirSensorDescription,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator, entry, description)
+        self._attr_unique_id = f"{entry.entry_id}_air_level"
+        self._attr_translation_key = "air_quality_level"
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = AQI_OPTIONS
+        # An enum carries no unit and must not enter statistics.
+        self._attr_state_class = None
+        self._attr_native_unit_of_measurement = None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the band name for the current index."""
+        return AQI_LABELS.get(super().native_value)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the numeric index alongside the band."""
+        return {"index": super().native_value}
+
+
+class OwmAirQualityForecastLabelSensor(OwmAirQualityForecastSensor):
+    """OpenWeather's qualitative band for a window's worst index."""
+
+    def __init__(
+        self,
+        coordinator: OwmStartupCoordinator,
+        entry: ConfigEntry,
+        description: OwmAirSensorDescription,
+        day_offset: int,
+    ) -> None:
+        """Initialise the sensor."""
+        super().__init__(coordinator, entry, description, day_offset)
+        self._attr_unique_id = f"{entry.entry_id}_air_forecast_{self._slug}_level"
+        self._attr_translation_key = f"air_quality_level_{self._slug}"
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = AQI_OPTIONS
+        self._attr_native_unit_of_measurement = None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the band name for the window's peak index."""
+        return AQI_LABELS.get(super().native_value)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the window details, plus the numeric index."""
+        attributes = dict(super().extra_state_attributes)
+        attributes["index"] = super().native_value
+        # The hourly timeline belongs on the numeric sensor, not here.
+        attributes.pop("forecast", None)
         return attributes

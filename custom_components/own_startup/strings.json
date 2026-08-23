@@ -39,7 +39,7 @@
           "basemap_attribution": "Basemap attribution",
           "contrast_stretch": "Stretch map contrast"
         },
-        "description": "Weather data © OpenWeather, licensed under ODbL.\n\nForecast length, air quality windows and the update interval are fixed at the values the Startup plan supports: 16-day daily forecast, 120-hour 3-hourly forecast, air quality peaks for today and tomorrow, and hourly updates.",
+        "description": "Weather data © OpenWeather, licensed under ODbL.\n\nForecast length, air quality windows and the update interval are fixed at the values the Startup plan supports: 16-day daily forecast, 120-hour 3-hourly forecast, air quality peaks for today and tomorrow, and updates every 30 minutes.",
         "data_description": {
           "basemap_url": "Tile template with {z}, {x} and {y} placeholders, drawn behind the weather maps. Defaults to the CARTO style Home Assistant itself uses. Leave empty for no basemap. Do not point this at tile.openstreetmap.org: their usage policy forbids it.",
           "basemap_attribution": "Burned into the corner of every map image. Update this if you change the basemap URL.",
@@ -65,11 +65,41 @@
           }
         }
       },
+      "air_quality_level": {
+        "name": "Air quality",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
+      },
       "air_quality_index_forecast_today": {
         "name": "Air quality index forecast today"
       },
+      "air_quality_level_today": {
+        "name": "Air quality today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
+      },
       "air_quality_index_forecast_tomorrow": {
         "name": "Air quality index forecast tomorrow"
+      },
+      "air_quality_level_tomorrow": {
+        "name": "Air quality tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
       "carbon_monoxide": {
         "name": "Carbon monoxide"
@@ -132,9 +162,6 @@
       },
       "clouds_map": {
         "name": "Cloud map"
-      },
-      "precipitation_map": {
-        "name": "Precipitation map"
       }
     }
   }

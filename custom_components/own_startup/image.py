@@ -1,7 +1,7 @@
 """Weather map images for the OpenWeatherMap Startup-plan integration.
 
-Three image entities are created: temperature, clouds and precipitation, from
-the Weather Maps 1.0 tile service included in the Startup plan.
+Two image entities are created: temperature and clouds, from the Weather Maps
+1.0 tile service included in the Startup plan.
 
 Design notes:
 
@@ -33,8 +33,9 @@ import aiohttp
 
 from homeassistant.components.image import ImageEntity, ImageEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, Platform
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -63,6 +64,10 @@ from .const import (
     MAP_VIEW,
     MAP_ZOOM,
     USER_AGENT,
+    WIND_ARROW_BASE,
+    WIND_ARROW_LAYERS,
+    WIND_ARROW_MAX_MS,
+    WIND_ARROW_PER_MS,
 )
 from .coordinator import OwmStartupCoordinator
 from .redaction import redact
@@ -88,12 +93,11 @@ MAP_TYPES: tuple[OwmMapDescription, ...] = (
         layer="clouds_new",
         translation_key="clouds_map",
     ),
-    OwmMapDescription(
-        key="precipitation_map",
-        layer="precipitation_new",
-        translation_key="precipitation_map",
-    ),
 )
+
+# Entities from earlier versions that are no longer created. Their registry
+# entries are removed on setup so they do not linger as unavailable.
+OBSOLETE_KEYS: tuple[str, ...] = ("precipitation_map",)
 
 
 def tile_grid(
@@ -123,9 +127,22 @@ async def async_setup_entry(
 ) -> None:
     """Set up the weather map images."""
     coordinator: OwmStartupCoordinator = entry.runtime_data
+    _async_remove_obsolete_entities(hass, entry)
     async_add_entities(
         OwmMapImage(coordinator, entry, description) for description in MAP_TYPES
     )
+
+
+@callback
+def _async_remove_obsolete_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop registry entries for image entities this version no longer creates."""
+    registry = er.async_get(hass)
+    for key in OBSOLETE_KEYS:
+        entity_id = registry.async_get_entity_id(
+            Platform.IMAGE, DOMAIN, f"{entry.entry_id}_{key}"
+        )
+        if entity_id:
+            registry.async_remove(entity_id)
 
 
 class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
@@ -224,6 +241,13 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         # time, so this is the only honest timestamp available.
         fetched_at = dt_util.now().strftime("%d %b %H:%M")
 
+        wind = None
+        if self.entity_description.layer in WIND_ARROW_LAYERS:
+            current = self.coordinator.data.current.get("wind") or {}
+            speed, bearing = current.get("speed"), current.get("deg")
+            if speed is not None and bearing is not None:
+                wind = (speed, bearing)
+
         self._rendered = await self.hass.async_add_executor_job(
             self._compose,
             basemap,
@@ -234,6 +258,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             self._contrast_stretch,
             self._language,
             fetched_at,
+            wind,
         )
         return self._rendered
 
@@ -297,6 +322,85 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         return dict(zip(positions, results, strict=True))
 
     @staticmethod
+    def _draw_marker(canvas, x: float, y: float) -> None:
+        """Mark the configured location. Runs in an executor.
+
+        Drawn on its own layer and composited: ImageDraw replaces pixels rather
+        than blending them, so a translucent halo drawn directly would punch a
+        hole in the map instead of shading it.
+        """
+        from PIL import Image, ImageDraw
+
+        marker = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(marker)
+        x, y = round(x), round(y)
+
+        # Dark halo first so the ring reads over pale and saturated overlays
+        # alike, then the ring, then the centre dot.
+        draw.ellipse((x - 9, y - 9, x + 9, y + 9), outline=(0, 0, 0, 130), width=4)
+        draw.ellipse(
+            (x - 8, y - 8, x + 8, y + 8), outline=(255, 255, 255, 245), width=2
+        )
+        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=(255, 255, 255, 245))
+        draw.ellipse((x - 3, y - 3, x + 3, y + 3), outline=(0, 0, 0, 130), width=1)
+
+        canvas.alpha_composite(marker)
+
+    @staticmethod
+    def _draw_wind(canvas, x: float, y: float, speed: float, bearing: float) -> None:
+        """Draw the wind vector at the configured location.
+
+        `bearing` is the meteorological direction the wind comes *from*. The
+        arrow is drawn pointing the way the wind is going, which is the
+        convention on weather maps, and starts clear of the marker so it does
+        not sit under it.
+        """
+        from PIL import Image, ImageDraw
+
+        from .legend import _font
+
+        heading = math.radians((bearing + 180) % 360)
+        # Screen coordinates: north is up, so y decreases going north.
+        unit_x, unit_y = math.sin(heading), -math.cos(heading)
+
+        length = WIND_ARROW_BASE + min(speed, WIND_ARROW_MAX_MS) * WIND_ARROW_PER_MS
+        start_x, start_y = x + unit_x * 14, y + unit_y * 14
+        end_x, end_y = x + unit_x * (14 + length), y + unit_y * (14 + length)
+
+        arrow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(arrow)
+
+        # Dark shaft underneath a white one, so the arrow reads on any overlay.
+        draw.line((start_x, start_y, end_x, end_y), fill=(0, 0, 0, 150), width=6)
+        draw.line((start_x, start_y, end_x, end_y), fill=(255, 255, 255, 245), width=2)
+
+        head = math.radians(150)
+        barbs = [
+            (
+                end_x + math.sin(heading + sign * head) * 11,
+                end_y - math.cos(heading + sign * head) * 11,
+            )
+            for sign in (1, -1)
+        ]
+        draw.polygon(
+            [(end_x, end_y), *barbs], fill=(255, 255, 255, 245), outline=(0, 0, 0, 150)
+        )
+
+        label = f"{speed:.0f} m/s"
+        font = _font(11)
+        text_x, text_y = end_x + unit_x * 8 - 12, end_y + unit_y * 8 - 6
+        for offset_x, offset_y in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            draw.text(
+                (text_x + offset_x, text_y + offset_y),
+                label,
+                font=font,
+                fill=(0, 0, 0, 190),
+            )
+        draw.text((text_x, text_y), label, font=font, fill=(255, 255, 255, 245))
+
+        canvas.alpha_composite(arrow)
+
+    @staticmethod
     def _compose(
         basemap: dict[tuple[int, int], bytes] | None,
         overlay: dict[tuple[int, int], bytes],
@@ -306,6 +410,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         contrast_stretch: bool,
         language: str,
         fetched_at: str | None = None,
+        wind: tuple[float, float] | None = None,
     ) -> bytes:
         """Stitch the grid, crop to the view and burn in the attribution.
 
@@ -351,6 +456,13 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             "RGBA", (MAP_VIEW, MAP_VIEW + LEGEND_HEIGHT), (24, 26, 28, 255)
         )
         canvas.alpha_composite(view, (0, 0))
+        # The configured location. Normally dead centre, but not when the grid
+        # was clamped at a pole or the antimeridian, so it is placed from the
+        # actual crop rather than assumed.
+        marker_x, marker_y = focus[0] - left, focus[1] - top
+        if wind is not None:
+            OwmMapImage._draw_wind(canvas, marker_x, marker_y, *wind)
+        OwmMapImage._draw_marker(canvas, marker_x, marker_y)
         legend_module.draw(
             canvas,
             layer,
@@ -369,8 +481,8 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
 def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
     """Report how much of a layer is actually painted.
 
-    A precipitation or cloud layer is legitimately transparent when there is
-    nothing to show, which is indistinguishable from a broken fetch by eye.
+    The cloud layer is legitimately near-transparent when there is little to
+    show, which is indistinguishable from a broken fetch by eye.
     This makes the difference visible in the debug log.
     """
     if not _LOGGER.isEnabledFor(logging.DEBUG):
@@ -378,7 +490,6 @@ def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
     from PIL import Image
 
     painted = 0
-    hidden = 0
     total = 0
     for data in overlay.values():
         tile = Image.open(io.BytesIO(data)).convert("RGBA")
@@ -386,17 +497,9 @@ def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
             total += count
             if colour[3] > 0:
                 painted += count
-            elif any(channel > 0 for channel in colour[:3]):
-                # Coloured but fully transparent: below the palette's visible
-                # threshold. Real data that the layer refuses to draw.
-                hidden += count
     if total:
         _LOGGER.debug(
-            "Layer %s: %.1f%% of pixels visibly painted, %.1f%% carrying colour "
-            "below the visible threshold",
-            layer,
-            painted / total * 100,
-            hidden / total * 100,
+            "Layer %s: %.1f%% of pixels carry data", layer, painted / total * 100
         )
 
 

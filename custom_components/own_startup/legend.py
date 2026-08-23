@@ -42,41 +42,33 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         "temp_new": "Temperature",
         "clouds_new": "Cloud cover",
-        "precipitation_new": "Precipitation",
         "range": "range in view",
         "stretched": "range in view, contrast stretched",
         "empty": "no data in view, full scale",
-        "below": "nothing above {value} {unit} in view, full scale",
         "fetched": "fetched",
     },
     "nl": {
         "temp_new": "Temperatuur",
         "clouds_new": "Bewolking",
-        "precipitation_new": "Neerslag",
         "range": "bereik in beeld",
         "stretched": "bereik in beeld, contrast opgerekt",
         "empty": "geen data in beeld, volledige schaal",
-        "below": "niets boven {value} {unit} in beeld, volledige schaal",
         "fetched": "opgehaald",
     },
     "de": {
         "temp_new": "Temperatur",
         "clouds_new": "Bewölkung",
-        "precipitation_new": "Niederschlag",
         "range": "Bereich im Bild",
         "stretched": "Bereich im Bild, Kontrast gespreizt",
         "empty": "keine Daten im Bild, volle Skala",
-        "below": "nichts über {value} {unit} im Bild, volle Skala",
         "fetched": "abgerufen",
     },
     "fr": {
         "temp_new": "Température",
         "clouds_new": "Couverture nuageuse",
-        "precipitation_new": "Précipitations",
         "range": "plage visible",
         "stretched": "plage visible, contraste étiré",
         "empty": "aucune donnée visible, échelle complète",
-        "below": "rien au-dessus de {value} {unit}, échelle complète",
         "fetched": "récupéré",
     },
 }
@@ -115,18 +107,6 @@ def colour_at(stops: tuple[tuple[float, Colour], ...], value: float) -> Colour:
     return stops[-1][1]
 
 
-def is_painted(colour: Colour, zero_alpha_is_data: bool) -> bool:
-    """Return whether a pixel carries data.
-
-    Normally opacity marks data. The precipitation palette is the exception:
-    every stop below 1 has zero alpha, so light rain is drawn in colour but
-    invisible. For that layer a coloured but transparent pixel still counts.
-    """
-    if colour[3] > 0:
-        return True
-    return zero_alpha_is_data and any(channel > 0 for channel in colour[:3])
-
-
 def observed_range(overlay, layer: str) -> tuple[float, float] | None:
     """Return the value range painted in an overlay image, or None if empty.
 
@@ -138,7 +118,6 @@ def observed_range(overlay, layer: str) -> tuple[float, float] | None:
         return None
 
     stops = legend["stops"]
-    zero_alpha_is_data = legend.get("zero_alpha_is_data", False)
     # Nearest-neighbour: interpolating would invent colours between palette
     # bands and widen the range with values that are not in the data.
     sample = overlay.resize((SAMPLE_SIZE, SAMPLE_SIZE), resample=0)
@@ -147,8 +126,8 @@ def observed_range(overlay, layer: str) -> tuple[float, float] | None:
     counted: list[tuple[float, int]] = []
     total = 0
     for count, colour in colours:
-        if not is_painted(colour, zero_alpha_is_data):
-            continue
+        if colour[3] == 0:
+            continue  # nothing painted here
         value = value_for_colour(stops, colour)
         counted.append((value, count))
         total += count
@@ -284,12 +263,11 @@ def stretch(overlay, layer: str, bounds: tuple[float, float]):
 
     low, high = pad_range(bounds)
     stops = legend["stops"]
-    zero_alpha_is_data = legend.get("zero_alpha_is_data", False)
     span = high - low
 
     mapping: dict[Colour, Colour] = {}
     for _count, colour in overlay.getcolors(overlay.width * overlay.height) or []:
-        if not is_painted(colour, zero_alpha_is_data):
+        if colour[3] == 0:
             mapping[colour] = colour  # nothing painted; leave it clear
             continue
         value = value_for_colour(stops, colour)
@@ -339,15 +317,7 @@ def draw(
         if bounds is None:
             low, high = stops[0][0], stops[-1][0]
             ramp = None
-            visible_from = legend.get("visible_from")
-            if visible_from is None:
-                note = translate(language, "empty")
-            else:
-                # Saying "no data" would be wrong: rain below the threshold is
-                # drawn with zero opacity, so it is present but unpaintable.
-                note = translate(language, "below").format(
-                    value=format_tick(visible_from, 0.1), unit=legend["unit"]
-                )
+            note = translate(language, "empty")
         else:
             low, high = pad_range(bounds)
             note = translate(language, "stretched" if ramp else "range")

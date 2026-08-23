@@ -4,11 +4,20 @@
       "air_quality_index": {
         "default": "mdi:air-filter"
       },
+      "air_quality_level": {
+        "default": "mdi:air-filter"
+      },
       "air_quality_index_forecast_today": {
         "default": "mdi:chart-timeline-variant"
       },
+      "air_quality_level_today": {
+        "default": "mdi:air-filter"
+      },
       "air_quality_index_forecast_tomorrow": {
         "default": "mdi:chart-timeline-variant"
+      },
+      "air_quality_level_tomorrow": {
+        "default": "mdi:air-filter"
       },
       "carbon_monoxide": {
         "default": "mdi:molecule-co"
@@ -71,9 +80,6 @@
       },
       "clouds_map": {
         "default": "mdi:weather-cloudy"
-      },
-      "precipitation_map": {
-        "default": "mdi:weather-pouring"
       }
     }
   }
