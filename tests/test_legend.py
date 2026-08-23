@@ -63,7 +63,7 @@ def test_observed_range_is_none_when_nothing_is_painted() -> None:
     from PIL import Image
 
     empty = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
-    assert observed_range(empty, "precipitation_new") is None
+    assert observed_range(empty, "temp_new") is None
 
 
 def test_observed_range_handles_a_uniform_field() -> None:
@@ -151,7 +151,7 @@ def test_stretch_leaves_unpainted_pixels_clear() -> None:
     from custom_components.owm_startup.legend import stretch
 
     overlay = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
-    result = stretch(overlay, "precipitation_new", (1.0, 5.0))
+    result = stretch(overlay, "clouds_new", (10.0, 50.0))
     assert result.getpixel((4, 4))[3] == 0
 
 
@@ -210,9 +210,7 @@ def test_legend_strings_are_translated() -> None:
     # Region variants and case resolve to the base language.
     assert translate("NL", "clouds_new") == translate("nl_BE", "clouds_new")
     # Unknown languages fall back to English rather than failing.
-    assert (
-        translate("xx", "precipitation_new") == TRANSLATIONS["en"]["precipitation_new"]
-    )
+    assert translate("xx", "clouds_new") == TRANSLATIONS["en"]["clouds_new"]
 
 
 def test_every_language_covers_every_key() -> None:
@@ -251,36 +249,8 @@ def test_legend_avoids_characters_the_fallback_font_cannot_draw() -> None:
             assert "·" not in value
 
 
-def test_transparent_precipitation_still_counts_as_data() -> None:
-    """Rain below 1 mm/h is drawn with zero alpha but is not absent."""
-    from PIL import Image
-
-    from custom_components.owm_startup.const import LEGENDS
-    from custom_components.owm_startup.legend import observed_range
-
-    stops = LEGENDS["precipitation_new"]["stops"]
-    drizzle = colour_at(stops, 0.3)
-    assert drizzle[3] == 0, "palette changed; this test assumed a hidden stop"
-
-    overlay = Image.new("RGBA", (32, 32), drizzle)
-    bounds = observed_range(overlay, "precipitation_new")
-
-    assert bounds is not None, "light rain was reported as no data at all"
-    assert 0.0 < bounds[0] < 1.0
-
-
-def test_truly_empty_precipitation_is_still_empty() -> None:
-    """A tile with nothing in it must not be mistaken for drizzle."""
-    from PIL import Image
-
-    from custom_components.owm_startup.legend import observed_range
-
-    overlay = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
-    assert observed_range(overlay, "precipitation_new") is None
-
-
 def test_clear_sky_does_not_count_as_cloud_data() -> None:
-    """The exception is scoped to precipitation.
+    """Zero alpha means no data, including where the palette has a colour.
 
     The cloud palette is white at zero alpha for 0% cover; counting that as
     data would peg every cloud range to zero.
@@ -293,22 +263,6 @@ def test_clear_sky_does_not_count_as_cloud_data() -> None:
     clear = colour_at(LEGENDS["clouds_new"]["stops"], 0.0)
     overlay = Image.new("RGBA", (32, 32), clear)
     assert observed_range(overlay, "clouds_new") is None
-
-
-def test_precipitation_unit_is_a_rate() -> None:
-    """The layer is an intensity; labelling it mm would misread the scale."""
-    from custom_components.owm_startup.const import LEGENDS
-
-    assert LEGENDS["precipitation_new"]["unit"] == "mm/h"
-
-
-def test_below_threshold_message_replaces_no_data() -> None:
-    """An empty precipitation view must not claim there is no data."""
-    from custom_components.owm_startup.legend import translate
-
-    message = translate("nl", "below").format(value="1.0", unit="mm/h")
-    assert "1.0" in message
-    assert "mm/h" in message
 
 
 def test_timestamp_is_drawn_when_supplied() -> None:

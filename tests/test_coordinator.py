@@ -51,9 +51,13 @@ async def test_fixed_parameters(hass: HomeAssistant, setup_integration) -> None:
     assert coordinator.forecast_steps == 40
 
 
-async def test_default_update_interval(hass: HomeAssistant, setup_integration) -> None:
-    """The default poll interval is one hour."""
-    assert setup_integration.runtime_data.update_interval == timedelta(minutes=60)
+async def test_update_interval(hass: HomeAssistant, setup_integration) -> None:
+    """The poll interval is 30 minutes and is not configurable.
+
+    Upstream refreshes every two hours, but polling is not aligned to it, so a
+    longer interval adds its own length to the worst-case staleness.
+    """
+    assert setup_integration.runtime_data.update_interval == timedelta(minutes=30)
 
 
 async def test_refresh_propagates_to_entities(

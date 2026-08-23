@@ -62,3 +62,22 @@ async def test_connection_error(client, aioclient_mock) -> None:
     )
     with pytest.raises(OwmConnectionError):
         await client.async_get_current()
+
+
+def test_manifest_version_is_in_the_changelog() -> None:
+    """A released version must have a dated changelog entry.
+
+    Guards the release step: bumping the manifest without writing the entry, or
+    writing the entry without bumping, both fail here.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    version = json.loads(
+        (root / "custom_components" / "owm_startup" / "manifest.json").read_text()
+    )["version"]
+    changelog = (root / "CHANGELOG.md").read_text()
+
+    assert f"## [{version}] - " in changelog, version
+    assert f"[{version}]: https://" in changelog, version

@@ -196,3 +196,56 @@ async def test_today_window_empty_late_at_night(hass: HomeAssistant, freezer) ->
     assert today._window() == []
     assert today.native_value is None
     assert today.extra_state_attributes["peak_at"] is None
+
+
+async def test_air_quality_band_sensors(hass: HomeAssistant, setup_integration) -> None:
+    """The index also comes as a named band, for current and both windows."""
+    current = hass.states.get("sensor.zoetermeer_air_quality")
+    assert current.state == "fair"
+    assert current.attributes["index"] == 2
+    assert current.attributes["device_class"] == "enum"
+    assert current.attributes["options"] == [
+        "good",
+        "fair",
+        "moderate",
+        "poor",
+        "very_poor",
+    ]
+
+    for day in ("today", "tomorrow"):
+        state = hass.states.get(f"sensor.zoetermeer_air_quality_{day}")
+        assert state.state in state.attributes["options"]
+        assert state.attributes["window"] == day
+
+
+async def test_band_sensor_has_no_state_class(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """An enum must stay out of statistics, and carries no unit."""
+    state = hass.states.get("sensor.zoetermeer_air_quality")
+    assert "state_class" not in state.attributes
+    assert "unit_of_measurement" not in state.attributes
+
+
+async def test_band_matches_the_numeric_index(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The band must never disagree with the number it is derived from."""
+    bands = ["good", "fair", "moderate", "poor", "very_poor"]
+    for suffix, numeric in (
+        ("", "sensor.zoetermeer_air_quality_index"),
+        ("_today", "sensor.zoetermeer_air_quality_index_forecast_today"),
+        ("_tomorrow", "sensor.zoetermeer_air_quality_index_forecast_tomorrow"),
+    ):
+        band = hass.states.get(f"sensor.zoetermeer_air_quality{suffix}")
+        index = int(float(hass.states.get(numeric).state))
+        assert band.state == bands[index - 1], (suffix, band.state, index)
+
+
+async def test_band_sensor_drops_the_hourly_timeline(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The timeline belongs on the numeric sensor; duplicating it bloats the DB."""
+    state = hass.states.get("sensor.zoetermeer_air_quality_today")
+    assert "forecast" not in state.attributes
+    assert "peak_at" in state.attributes

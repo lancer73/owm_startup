@@ -97,12 +97,11 @@ def test_grid_clamps_at_the_edges() -> None:
     assert tile_grid(-85.0, 179.9, 8, 3)[:2] == (253, 253)
 
 
-async def test_three_maps_created(
-    hass: HomeAssistant, setup_integration, mock_tiles
-) -> None:
-    """Temperature, clouds and precipitation images exist."""
-    for key in ("temperature_map", "cloud_map", "precipitation_map"):
+async def test_maps_created(hass: HomeAssistant, setup_integration, mock_tiles) -> None:
+    """Temperature and cloud images exist; precipitation was removed."""
+    for key in ("temperature_map", "cloud_map"):
         assert hass.states.get(f"image.zoetermeer_{key}") is not None
+    assert hass.states.get("image.zoetermeer_precipitation_map") is None
 
 
 async def test_image_is_rendered_png(
@@ -256,8 +255,13 @@ def test_contrast_stretch_changes_the_render(hass: HomeAssistant) -> None:
     assert plain != boosted
 
     def spread(data: bytes) -> int:
-        """Return how far the map area's colours travel across the channels."""
-        image = Image.open(io.BytesIO(data)).convert("RGB").crop((0, 0, 512, 512))
+        """Return how far the map colours travel, away from the marker.
+
+        The location marker is black and white, so measuring across the whole
+        view would report its contrast rather than the layer's.
+        """
+        # Full width so the whole gradient is covered, but above the marker.
+        image = Image.open(io.BytesIO(data)).convert("RGB").crop((0, 0, 512, 200))
         colours = [colour for _count, colour in image.getcolors(maxcolors=1 << 20)]
         return max(
             max(colour[channel] for colour in colours)
@@ -266,10 +270,11 @@ def test_contrast_stretch_changes_the_render(hass: HomeAssistant) -> None:
         )
 
     # Three degrees of OpenWeather palette is nearly one colour; stretched it
-    # should cross most of the ramp. The threshold allows for the overlay
-    # opacity, which is deliberately well below opaque.
+    # should cross a good part of the ramp. The threshold allows for the
+    # overlay opacity, which is deliberately low so the basemap reads through:
+    # raising it would make this test pass and the maps worse.
     assert spread(plain) < 60
-    assert spread(boosted) > 100
+    assert spread(boosted) > 75
 
 
 async def test_map_tiles_are_fetched_concurrently(
@@ -355,3 +360,143 @@ async def test_render_carries_a_fetch_timestamp(
         second = await entity.async_image()
 
     assert first != second
+
+
+async def test_marker_is_drawn_at_the_configured_location(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The marker sits at the centre of the view, over the coordinates."""
+    from PIL import Image
+
+    from custom_components.owm_startup.const import MAP_VIEW
+
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    image = Image.open(io.BytesIO(await entity.async_image())).convert("RGBA")
+
+    centre = MAP_VIEW // 2
+    # The ring is bright; the flat test tiles are not.
+    ring = [
+        image.getpixel((centre + dx, centre + dy))
+        for dx, dy in ((0, -8), (0, 8), (-8, 0), (8, 0))
+    ]
+    assert any(pixel[0] > 200 and pixel[1] > 200 for pixel in ring), ring
+
+    # Well away from the marker the map is untouched.
+    assert image.getpixel((40, 40))[:3] != (255, 255, 255)
+
+
+def test_marker_layer_does_not_punch_a_hole(hass: HomeAssistant) -> None:
+    """The halo must shade the map, not make it transparent.
+
+    ImageDraw replaces pixels rather than blending, so drawing a translucent
+    halo straight onto the canvas would leave holes.
+    """
+    from PIL import Image
+
+    from custom_components.owm_startup.image import OwmMapImage
+
+    canvas = Image.new("RGBA", (64, 64), (10, 120, 10, 255))
+    OwmMapImage._draw_marker(canvas, 32, 32)
+
+    alphas = [pixel[3] for pixel in canvas.getdata()]
+    assert min(alphas) == 255
+
+
+async def test_obsolete_precipitation_entity_is_removed(
+    hass: HomeAssistant, config_entry, mock_api, mock_tiles
+) -> None:
+    """An entity left over from an earlier version must not linger.
+
+    Without this it would sit in the registry as permanently unavailable, with
+    no obvious way for the user to tell a removed feature from a broken one.
+    """
+    from custom_components.owm_startup.const import DOMAIN
+    from homeassistant.const import Platform
+    from homeassistant.helpers import entity_registry as er
+
+    config_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    stale = registry.async_get_or_create(
+        Platform.IMAGE,
+        DOMAIN,
+        f"{config_entry.entry_id}_precipitation_map",
+        config_entry=config_entry,
+        suggested_object_id="zoetermeer_precipitation_map",
+    )
+    assert registry.async_get(stale.entity_id) is not None
+
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert registry.async_get(stale.entity_id) is None
+
+
+CLOUDS = "image.zoetermeer_cloud_map"
+
+
+def _wind_render(wind, layer="clouds_new"):
+    """Compose a flat map with the given wind vector."""
+    from custom_components.owm_startup.image import OwmMapImage
+
+    tiles = {(dx, dy): _png((40, 40, 40, 255)) for dx in range(3) for dy in range(3)}
+    return OwmMapImage._compose(
+        tiles, tiles, (384.0, 384.0), "attr", layer, False, "en", None, wind
+    )
+
+
+def test_wind_arrow_points_downwind(hass: HomeAssistant) -> None:
+    """A southwesterly wind travels northeast, so the arrow points up-right.
+
+    `deg` is the direction the wind comes from; drawing it that way round is
+    the classic mistake.
+    """
+    from PIL import Image
+
+    from custom_components.owm_startup.const import MAP_VIEW
+
+    image = Image.open(io.BytesIO(_wind_render((10.0, 225.0)))).convert("RGB")
+    centre = MAP_VIEW // 2
+
+    def brightness(dx: int, dy: int) -> int:
+        box = image.crop(
+            (centre + dx - 20, centre + dy - 20, centre + dx + 20, centre + dy + 20)
+        )
+        return max(sum(pixel) for pixel in box.getdata())
+
+    # Up and to the right of the marker, not down and to the left.
+    assert brightness(35, -35) > brightness(-35, 35)
+
+
+def test_wind_arrow_length_tracks_speed(hass: HomeAssistant) -> None:
+    """A stronger wind draws a longer arrow."""
+    from PIL import Image
+
+    def bright_pixels(data: bytes) -> int:
+        image = Image.open(io.BytesIO(data)).convert("RGB").crop((0, 0, 512, 512))
+        return sum(1 for pixel in image.getdata() if sum(pixel) > 600)
+
+    assert bright_pixels(_wind_render((18.0, 90.0))) > bright_pixels(
+        _wind_render((2.0, 90.0))
+    )
+
+
+def test_wind_arrow_is_scoped_to_the_configured_layers(hass: HomeAssistant) -> None:
+    """Only the cloud map asks for a wind vector."""
+    from custom_components.owm_startup.const import WIND_ARROW_LAYERS
+
+    assert WIND_ARROW_LAYERS == ("clouds_new",)
+    assert _wind_render((10.0, 225.0)) != _wind_render(None)
+
+
+async def test_wind_arrow_absent_without_wind_data(
+    hass: HomeAssistant, config_entry, mock_api, mock_tiles
+) -> None:
+    """A payload without wind must not break the render."""
+    mock_api["current"]["wind"] = {}
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity = hass.data["image"].get_entity(CLOUDS)
+    assert (await entity.async_image()).startswith(b"\x89PNG")
