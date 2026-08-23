@@ -46,9 +46,12 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   that device class expects. CO is reported in µg/m³ and therefore has no
   device class; do not "fix" this.
 - Forecast length (16 days), 3-hourly steps (40), air quality windows
-  (today and tomorrow, as local calendar days) and the poll interval (60 min)
+  (today and tomorrow, as local calendar days) and the poll interval (30 min)
   are fixed constants in
   `const.py`, deliberately not options. Do not turn them back into settings.
+- The air quality band sensors are `SensorDeviceClass.ENUM`. Their states are
+  the untranslated keys, never the display names: changing them would break
+  every template that reads them. Translation happens in `strings.json`.
 - Forecast sensors must not have a `state_class` — a rolling maximum would
   corrupt long-term statistics.
 
@@ -60,16 +63,26 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - Map tiles are composited server-side so the API key stays out of the browser.
   Do not "simplify" this by handing the frontend a tile URL.
 - Pillow work is blocking; keep it in an executor.
+- The wind arrow points the way the wind is going: OpenWeather's `deg` is the
+  direction it comes *from*, so the drawing adds 180 degrees. There is a test
+  asserting the arrow lands up-right for a southwesterly; do not "fix" it.
+- A field of wind arrows is not possible on this plan. Maps 2.0 `WND`/`WNDUV`
+  with `arrow_step` renders them, but that is Developer tier; Maps 1.0
+  `wind_new` is a speed raster with no direction in it.
+- Draw translucent map furniture on its own layer and `alpha_composite` it.
+  `ImageDraw` replaces pixels rather than blending, so a translucent halo drawn
+  straight onto the canvas punches a hole in the map.
 - Legend text is burned into the image, so it cannot use Home Assistant's
   translations. Add new strings to `legend.TRANSLATIONS` in every language
   there — a test enforces that the tables match. Keep the text ASCII-safe
   apart from "©": the bitmap fallback font cannot draw "·".
 - The basemap cache key includes a hash of the tile URL. Do not simplify it
   back to z/x/y: switching styles then silently reuses the old tiles.
-- `precipitation_new` is an intensity in mm/h, not an accumulation, and its
-  stops below 1 have zero alpha. `zero_alpha_is_data` on that layer is what
-  makes light rain visible; do not set it on other layers, where a transparent
-  pixel means a real zero.
+- The precipitation map was removed deliberately and completely. If it is ever
+  reinstated, two findings from the first attempt are worth not rediscovering:
+  `precipitation_new` is an intensity in mm/h rather than an accumulation, and
+  every palette stop below 1 has zero alpha, so light rain is drawn in colour
+  but invisible and needs special handling to register at all.
 - Legend palettes in `const.LEGENDS` are OpenWeather's documented defaults for
   Weather Maps 1.0. Do not invent stops: if a layer is added, take its palette
   from their map legend page. Stops are (value, RGBA) pairs in ascending value
