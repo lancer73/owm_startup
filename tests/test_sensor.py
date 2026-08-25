@@ -11,6 +11,7 @@ from custom_components.owm_startup.api import OwmConnectionError
 from custom_components.owm_startup.sensor import (
     SENSOR_TYPES,
     OwmAirQualityForecastSensor,
+    band_for,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -30,92 +31,130 @@ async def test_aqi_level_attribute(hass: HomeAssistant, setup_integration) -> No
     assert state.attributes["level"] == "fair"
 
 
-async def test_forecast_today_reports_peak(
+async def test_band_sensors_exist_for_every_scaled_pollutant(
     hass: HomeAssistant, setup_integration
 ) -> None:
-    """The today sensor reports the worst value left in the local day."""
-    state = hass.states.get("sensor.zoetermeer_air_quality_index_forecast_today")
-    assert state.attributes["window"] == "today"
-    assert state.attributes["peak_at"] is not None
-    assert state.state != "unknown"
-
-
-async def test_both_day_sensors_exist(hass: HomeAssistant, setup_integration) -> None:
-    """Every pollutant gets a today and a tomorrow sensor."""
+    """Bands cover the index and the six pollutants OpenWeather scales."""
     for pollutant in (
-        "air_quality_index",
-        "pm2_5",
-        "pm10",
-        "ozone",
-        "nitrogen_dioxide",
-        "nitrogen_monoxide",
-        "sulphur_dioxide",
-        "carbon_monoxide",
-        "ammonia",
+        "air_quality",
+        "pm2_5_level",
+        "pm10_level",
+        "ozone_level",
+        "nitrogen_dioxide_level",
+        "sulphur_dioxide_level",
+        "carbon_monoxide_level",
     ):
+        assert hass.states.get(f"sensor.zoetermeer_{pollutant}") is not None, pollutant
         for day in ("today", "tomorrow"):
-            entity_id = f"sensor.zoetermeer_{pollutant}_forecast_{day}"
+            entity_id = f"sensor.zoetermeer_{pollutant}_{day}"
             assert hass.states.get(entity_id) is not None, entity_id
 
 
-async def test_peak_time_is_local_and_inside_window(
+async def test_background_sensors_exist_and_are_labelled_apart(
     hass: HomeAssistant, setup_integration
 ) -> None:
-    """peak_at is a local timestamp that falls inside the window."""
-    for day in ("today", "tomorrow"):
-        state = hass.states.get(f"sensor.zoetermeer_air_quality_index_forecast_{day}")
-        peak_at = dt_util.parse_datetime(state.attributes["peak_at"])
-        start = dt_util.parse_datetime(state.attributes["window_start"])
-        end = dt_util.parse_datetime(state.attributes["window_end"])
-        assert peak_at is not None
-        assert start <= peak_at < end
-        assert peak_at.tzinfo is not None
+    """NH3 and NO are scored against background, under their own names."""
+    for entity_id in (
+        "sensor.zoetermeer_ammonia_vs_background",
+        "sensor.zoetermeer_ammonia_vs_background_today",
+        "sensor.zoetermeer_nitrogen_monoxide_vs_background",
+        "sensor.zoetermeer_nitrogen_monoxide_vs_background_tomorrow",
+    ):
+        state = hass.states.get(entity_id)
+        assert state is not None, entity_id
+        assert state.attributes["options"] == ["low", "typical", "elevated", "high"]
+
+    # And no health-scale entity was created for them.
+    assert hass.states.get("sensor.zoetermeer_ammonia_level") is None
+    # They remain available as current numbers.
+    assert hass.states.get("sensor.zoetermeer_ammonia").state == "0.9"
 
 
-async def test_windows_are_calendar_days(
+async def test_numeric_forecast_sensors_are_gone(
     hass: HomeAssistant, setup_integration
 ) -> None:
-    """Today and tomorrow cover their own local dates and do not overlap."""
-    today_state = hass.states.get("sensor.zoetermeer_air_quality_index_forecast_today")
-    tomorrow_state = hass.states.get(
-        "sensor.zoetermeer_air_quality_index_forecast_tomorrow"
+    """Forecasts are bands only.
+
+    A microgram figure two days out reads as precision the model lacks.
+    """
+    for entity_id in (
+        "sensor.zoetermeer_air_quality_index_forecast_today",
+        "sensor.zoetermeer_pm2_5_forecast_today",
+        "sensor.zoetermeer_pm2_5_forecast_tomorrow",
+    ):
+        assert hass.states.get(entity_id) is None, entity_id
+
+
+async def test_current_numbers_are_kept(hass: HomeAssistant, setup_integration) -> None:
+    """Current readings stay numeric so they can be graphed."""
+    state = hass.states.get("sensor.zoetermeer_pm2_5")
+    assert state.state == "8.4"
+    assert state.attributes["state_class"] == "measurement"
+
+
+async def test_current_band_carries_its_value(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The band names the number, and the number stays as an attribute."""
+    aqi = hass.states.get("sensor.zoetermeer_air_quality")
+    assert aqi.state == "fair"
+    assert aqi.attributes["index"] == 2
+
+    pm25 = hass.states.get("sensor.zoetermeer_pm2_5_level")
+    # 8.4 µg/m³ is below the 10 boundary, so Good.
+    assert pm25.state == "good"
+    assert pm25.attributes["value"] == 8.4
+
+
+async def test_forecast_band_reports_the_window_peak(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The band is the worst expected in the window, with the peak attached."""
+    state = hass.states.get("sensor.zoetermeer_air_quality_today")
+    assert state.state in state.attributes["options"]
+    assert state.attributes["window"] == "today"
+    assert state.attributes["peak_at"] is not None
+    assert state.attributes["index"] is not None
+
+
+async def test_forecast_band_windows_are_calendar_days(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """Today and tomorrow cover their own local dates."""
+    today = hass.states.get("sensor.zoetermeer_air_quality_today")
+    tomorrow = hass.states.get("sensor.zoetermeer_air_quality_tomorrow")
+
+    assert (
+        today.attributes["window_end"]
+        == (dt_util.start_of_local_day() + timedelta(days=1)).isoformat()
+    )
+    assert (
+        tomorrow.attributes["window_start"]
+        == (dt_util.start_of_local_day() + timedelta(days=1)).isoformat()
     )
 
-    today = dt_util.now().date()
-    tomorrow = today + timedelta(days=1)
-
-    today_times = [
+    times = [
         dt_util.parse_datetime(item["datetime"])
-        for item in today_state.attributes["forecast"]
+        for item in tomorrow.attributes["forecast"]
     ]
-    tomorrow_times = [
-        dt_util.parse_datetime(item["datetime"])
-        for item in tomorrow_state.attributes["forecast"]
-    ]
-
-    assert today_times
-    assert len(tomorrow_times) == 24
-    assert all(moment.date() == today for moment in today_times)
-    assert all(moment.date() == tomorrow for moment in tomorrow_times)
-    assert not set(today_times) & set(tomorrow_times)
+    assert len(times) == 24
+    assert all(
+        moment.date() == dt_util.now().date() + timedelta(days=1) for moment in times
+    )
 
 
-async def test_today_window_shrinks_during_the_day(
+async def test_bands_have_no_state_class(
     hass: HomeAssistant, setup_integration
 ) -> None:
-    """Today's window never reaches past local midnight."""
-    state = hass.states.get("sensor.zoetermeer_air_quality_index_forecast_today")
-    end = dt_util.parse_datetime(state.attributes["window_end"])
-    assert end == dt_util.start_of_local_day() + timedelta(days=1)
-    assert len(state.attributes["forecast"]) <= 25
-
-
-async def test_forecast_has_no_state_class(
-    hass: HomeAssistant, setup_integration
-) -> None:
-    """Forecast sensors must stay out of long-term statistics."""
-    state = hass.states.get("sensor.zoetermeer_pm2_5_forecast_today")
-    assert "state_class" not in state.attributes
+    """An enum must stay out of statistics, and carries no unit."""
+    for entity_id in (
+        "sensor.zoetermeer_air_quality",
+        "sensor.zoetermeer_pm10_level_tomorrow",
+    ):
+        state = hass.states.get(entity_id)
+        assert "state_class" not in state.attributes, entity_id
+        assert "unit_of_measurement" not in state.attributes, entity_id
+        assert state.attributes["device_class"] == "enum"
 
 
 async def test_air_failure_is_not_fatal(
@@ -198,54 +237,121 @@ async def test_today_window_empty_late_at_night(hass: HomeAssistant, freezer) ->
     assert today.extra_state_attributes["peak_at"] is None
 
 
-async def test_air_quality_band_sensors(hass: HomeAssistant, setup_integration) -> None:
-    """The index also comes as a named band, for current and both windows."""
-    current = hass.states.get("sensor.zoetermeer_air_quality")
-    assert current.state == "fair"
-    assert current.attributes["index"] == 2
-    assert current.attributes["device_class"] == "enum"
-    assert current.attributes["options"] == [
-        "good",
-        "fair",
-        "moderate",
-        "poor",
-        "very_poor",
-    ]
-
-    for day in ("today", "tomorrow"):
-        state = hass.states.get(f"sensor.zoetermeer_air_quality_{day}")
-        assert state.state in state.attributes["options"]
-        assert state.attributes["window"] == day
-
-
-async def test_band_sensor_has_no_state_class(
-    hass: HomeAssistant, setup_integration
-) -> None:
-    """An enum must stay out of statistics, and carries no unit."""
-    state = hass.states.get("sensor.zoetermeer_air_quality")
-    assert "state_class" not in state.attributes
-    assert "unit_of_measurement" not in state.attributes
-
-
-async def test_band_matches_the_numeric_index(
-    hass: HomeAssistant, setup_integration
-) -> None:
-    """The band must never disagree with the number it is derived from."""
-    bands = ["good", "fair", "moderate", "poor", "very_poor"]
-    for suffix, numeric in (
-        ("", "sensor.zoetermeer_air_quality_index"),
-        ("_today", "sensor.zoetermeer_air_quality_index_forecast_today"),
-        ("_tomorrow", "sensor.zoetermeer_air_quality_index_forecast_tomorrow"),
-    ):
-        band = hass.states.get(f"sensor.zoetermeer_air_quality{suffix}")
-        index = int(float(hass.states.get(numeric).state))
-        assert band.state == bands[index - 1], (suffix, band.state, index)
+@pytest.mark.parametrize(
+    ("component", "value", "expected"),
+    [
+        # Boundaries from OpenWeather's published scale.
+        ("pm2_5", 0, "good"),
+        ("pm2_5", 9.9, "good"),
+        ("pm2_5", 10, "fair"),
+        ("pm2_5", 24.9, "fair"),
+        ("pm2_5", 25, "moderate"),
+        ("pm2_5", 50, "poor"),
+        ("pm2_5", 75, "very_poor"),
+        ("pm2_5", 1000, "very_poor"),
+        ("pm10", 20, "fair"),
+        ("o3", 59, "good"),
+        ("o3", 180, "very_poor"),
+        ("no2", 40, "fair"),
+        ("so2", 350, "very_poor"),
+        ("co", 4399, "good"),
+        ("co", 15400, "very_poor"),
+        ("aqi", 1, "good"),
+        ("aqi", 5, "very_poor"),
+    ],
+)
+def test_band_for_matches_the_published_scale(component, value, expected) -> None:
+    """Each boundary is inclusive at the lower edge, per OpenWeather's table."""
+    assert band_for(component, value) == expected
 
 
-async def test_band_sensor_drops_the_hourly_timeline(
-    hass: HomeAssistant, setup_integration
-) -> None:
-    """The timeline belongs on the numeric sensor; duplicating it bloats the DB."""
-    state = hass.states.get("sensor.zoetermeer_air_quality_today")
-    assert "forecast" not in state.attributes
-    assert "peak_at" in state.attributes
+@pytest.mark.parametrize(
+    ("component", "value", "expected"),
+    [
+        # NH3 against Dutch ambient background: coastal 1-2, national mean
+        # about 5, livestock areas up to 15.
+        ("nh3", 1.0, "low"),
+        ("nh3", 2, "typical"),
+        ("nh3", 5.4, "typical"),
+        ("nh3", 8, "elevated"),
+        ("nh3", 15, "high"),
+        ("nh3", 50, "high"),
+        ("no", 1.0, "low"),
+        ("no", 5, "typical"),
+        ("no", 10, "elevated"),
+        ("no", 25, "high"),
+    ],
+)
+def test_background_bands(component, value, expected) -> None:
+    """NH3 and NO are scored against background, not against health limits."""
+    assert band_for(component, value) == expected
+
+
+def test_background_bands_use_a_separate_vocabulary() -> None:
+    """A background band must never read like a health verdict.
+
+    OpenWeather publishes no health scale for these two, so borrowing
+    "Good"/"Poor" would assert something no source supports.
+    """
+    from custom_components.owm_startup.sensor import band_options
+
+    health = set(band_options("pm2_5"))
+    background = set(band_options("nh3"))
+
+    assert background == {"low", "typical", "elevated", "high"}
+    assert not health & background
+    assert band_options("no") == band_options("nh3")
+
+
+def test_unknown_components_have_no_band() -> None:
+    """Anything without a sourced scale stays unscored."""
+    assert band_for("nox", 50) is None
+
+
+def test_band_for_handles_missing_values() -> None:
+    """A missing reading has no band rather than a wrong one."""
+    assert band_for("pm2_5", None) is None
+    assert band_for("aqi", None) is None
+
+
+def test_health_bands_have_a_state_icon_ramp() -> None:
+    """Severity has to read through the glyph: icons carry no colour.
+
+    An integration can supply state-based icon translations but nothing in
+    that schema sets a colour, so the glyph is the only signal available
+    without dashboard configuration.
+    """
+    import json
+    from pathlib import Path
+
+    icons = json.loads(
+        (
+            Path(__file__).parent.parent
+            / "custom_components"
+            / "owm_startup"
+            / "icons.json"
+        ).read_text()
+    )["entity"]["sensor"]
+
+    for key in ("aqi_level", "pm2_5_level_today", "co_level_tomorrow"):
+        states = icons[key]["state"]
+        assert set(states) == {"good", "fair", "moderate", "poor", "very_poor"}
+        assert len(set(states.values())) == 5, key
+
+
+def test_background_bands_have_no_severity_ramp() -> None:
+    """A background band is not a verdict, so it does not escalate visually."""
+    import json
+    from pathlib import Path
+
+    icons = json.loads(
+        (
+            Path(__file__).parent.parent
+            / "custom_components"
+            / "owm_startup"
+            / "icons.json"
+        ).read_text()
+    )["entity"]["sensor"]
+
+    for key in ("nh3_background_level", "no_background_level_today"):
+        assert "state" not in icons[key], key

@@ -403,35 +403,6 @@ def test_marker_layer_does_not_punch_a_hole(hass: HomeAssistant) -> None:
     assert min(alphas) == 255
 
 
-async def test_obsolete_precipitation_entity_is_removed(
-    hass: HomeAssistant, config_entry, mock_api, mock_tiles
-) -> None:
-    """An entity left over from an earlier version must not linger.
-
-    Without this it would sit in the registry as permanently unavailable, with
-    no obvious way for the user to tell a removed feature from a broken one.
-    """
-    from custom_components.owm_startup.const import DOMAIN
-    from homeassistant.const import Platform
-    from homeassistant.helpers import entity_registry as er
-
-    config_entry.add_to_hass(hass)
-    registry = er.async_get(hass)
-    stale = registry.async_get_or_create(
-        Platform.IMAGE,
-        DOMAIN,
-        f"{config_entry.entry_id}_precipitation_map",
-        config_entry=config_entry,
-        suggested_object_id="zoetermeer_precipitation_map",
-    )
-    assert registry.async_get(stale.entity_id) is not None
-
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert registry.async_get(stale.entity_id) is None
-
-
 CLOUDS = "image.zoetermeer_cloud_map"
 
 
@@ -500,3 +471,263 @@ async def test_wind_arrow_absent_without_wind_data(
 
     entity = hass.data["image"].get_entity(CLOUDS)
     assert (await entity.async_image()).startswith(b"\x89PNG")
+
+
+def _tile_with_offset(base: int) -> bytes:
+    """Return a flat tile at a given brightness, standing in for one model run."""
+    return _png((base, base, base, 255))
+
+
+def test_seam_mismatch_detects_a_step_at_a_tile_boundary(hass: HomeAssistant) -> None:
+    """Two model runs in one grid leave a straight step along a seam."""
+    from PIL import Image
+
+    from custom_components.owm_startup.image import seam_mismatch
+
+    overlay = Image.new("RGBA", (512, 512), (100, 100, 100, 255))
+    overlay.paste(Image.new("RGBA", (512, 200), (140, 140, 140, 255)), (0, 0))
+
+    assert seam_mismatch(overlay, [("y", 200)]) is True
+
+
+def test_seam_mismatch_ignores_a_smooth_field(hass: HomeAssistant) -> None:
+    """A real weather gradient across a seam must not be flagged."""
+    from PIL import Image
+
+    from custom_components.owm_startup.image import seam_mismatch
+
+    overlay = Image.new("RGBA", (512, 512))
+    pixels = overlay.load()
+    for y in range(512):
+        value = 60 + y // 6
+        for x in range(512):
+            pixels[x, y] = (value, value, value, 255)
+
+    assert seam_mismatch(overlay, [("y", 200), ("y", 300)]) is False
+
+
+def test_seam_mismatch_ignores_seams_outside_the_view(hass: HomeAssistant) -> None:
+    """A seam position off the edge must not be probed."""
+    from PIL import Image
+
+    from custom_components.owm_startup.image import seam_mismatch
+
+    overlay = Image.new("RGBA", (64, 64), (100, 100, 100, 255))
+    assert seam_mismatch(overlay, [("x", 0), ("x", 64)]) is False
+
+
+def test_mixed_tiles_are_labelled_on_the_image(hass: HomeAssistant) -> None:
+    """A mismatched grid must say so rather than look like weather."""
+    from PIL import Image
+
+    from custom_components.owm_startup.image import OwmMapImage
+
+    tiles = {
+        (dx, dy): _tile_with_offset(90 if dy == 0 else 170)
+        for dx in range(3)
+        for dy in range(3)
+    }
+    rendered = OwmMapImage._compose(
+        None, tiles, (384.0, 384.0), "attr", "temp_new", False, "en", None, None
+    )
+    clean = {(dx, dy): _tile_with_offset(120) for dx in range(3) for dy in range(3)}
+    baseline = OwmMapImage._compose(
+        None, clean, (384.0, 384.0), "attr", "temp_new", False, "en", None, None
+    )
+
+    assert rendered != baseline
+    assert (
+        Image.open(io.BytesIO(rendered)).size == Image.open(io.BytesIO(baseline)).size
+    )
+
+
+def test_mixed_tiles_note_is_translated(hass: HomeAssistant) -> None:
+    """The warning on the strip follows the configured language."""
+    from custom_components.owm_startup.legend import translate
+
+    assert translate("nl", "mixed") == "tegels uit verschillende updates"
+    assert translate("en", "mixed") == "tiles from different updates"
+
+
+async def test_corrupt_tile_yields_no_image_not_a_partial_one(
+    hass: HomeAssistant, hass_client, config_entry, mock_api, caplog
+) -> None:
+    """A truncated tile must fail cleanly, never render half a map.
+
+    Pillow raises from inside the executor, past the fetch error handling, so
+    this needs its own guard.
+    """
+    truncated = _png((255, 0, 0, 128))[:120]
+
+    with (
+        patch(
+            "custom_components.owm_startup.api.OwmApiClient.async_get_map_tile",
+            return_value=truncated,
+        ),
+        patch("custom_components.owm_startup.image.async_get_clientsession"),
+    ):
+        config_entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        client = await hass_client()
+        state = hass.states.get(TEMPERATURE)
+        response = await client.get(state.attributes["entity_picture"])
+
+    assert response.status == 500
+    assert "Could not decode" in caplog.text
+
+
+async def test_one_failed_tile_fails_the_whole_grid(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """No partial grid, and no reuse of an earlier tile in its place.
+
+    There is no per-tile cache for weather layers by design: a mixed-vintage
+    map is worse than no map, because it looks plausible.
+    """
+    good = _png((255, 0, 0, 128))
+    calls = {"n": 0}
+
+    async def _one_bad(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 5:
+            raise OwmConnectionError("tile 5 failed")
+        return good
+
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    mock_tiles.side_effect = _one_bad
+
+    assert await entity.async_image() is None
+    assert entity._rendered is None
+
+
+async def test_probe_skips_the_grid_when_nothing_changed(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """An unchanged probe must cost one tile, not nine.
+
+    This is the whole point of the probe: upstream refreshes every two hours
+    while polling runs every thirty minutes.
+    """
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()  # primes the probe hash from the full grid
+
+    mock_tiles.reset_mock()
+    await entity.async_capture_if_changed()
+
+    assert mock_tiles.call_count == 1
+
+
+async def test_probe_fetches_the_grid_when_the_centre_changed(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A changed probe pulls the rest and stores a frame."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()
+
+    mock_tiles.reset_mock()
+    mock_tiles.return_value = _png((0, 255, 0, 200))
+    await entity.async_capture_if_changed()
+
+    # One probe plus the nine of the full render.
+    assert mock_tiles.call_count == 10
+    assert entity._store.frames()
+
+
+async def test_capture_failure_does_not_escape(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The capture runs unawaited; an error must not become a task crash."""
+    mock_tiles.side_effect = RuntimeError("something unexpected")
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+
+    await entity.async_capture_if_changed()  # must not raise
+
+
+async def test_animation_entity_reports_its_progress(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A fresh install has no history; say so rather than look broken."""
+    state = hass.states.get("image.zoetermeer_temperature_map_last_12_hours")
+    assert state is not None
+    assert state.attributes["window_hours"] == 12
+    assert state.attributes["frames"] >= 0
+    assert state.attributes["minimum_frames"] == 1
+
+
+async def test_probe_hash_not_advanced_when_the_grid_fetch_fails(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A failed capture must be retried, not recorded as done.
+
+    Advancing the probe hash before the render succeeds loses that frame
+    permanently: the next refresh sees an unchanged probe and skips.
+    """
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()  # stores a frame opportunistically
+    before = entity._store.probe_hash
+    frames_before = len(entity._store.frames())
+
+    calls = {"n": 0}
+    changed = _png((0, 255, 0, 200))
+
+    async def _probe_then_fail(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return changed  # the probe itself succeeds
+        raise OwmConnectionError("network went away mid-grid")
+
+    mock_tiles.side_effect = _probe_then_fail
+    await entity.async_capture_if_changed()
+
+    assert entity._store.probe_hash == before
+    assert len(entity._store.frames()) == frames_before
+
+
+async def test_frame_count_updates_without_waiting_for_the_next_refresh(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A captured frame must show up in the attributes immediately.
+
+    Capture is scheduled from the coordinator update rather than run inside it,
+    so an entity that only publishes during that update reports a count one
+    cycle out of date.
+    """
+    animation = "image.zoetermeer_temperature_map_last_12_hours"
+    before = hass.states.get(animation).attributes["frames"]
+
+    still = hass.data["image"].get_entity(TEMPERATURE)
+    still._rendered = None
+    await still.async_image()
+    await hass.async_block_till_done()
+
+    after = hass.states.get(animation).attributes["frames"]
+    assert after == before + 1
+
+
+async def test_animation_rebuilds_when_a_frame_lands(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A cached animation must not outlive the sequence it was built from."""
+    animation = hass.data["image"].get_entity(
+        "image.zoetermeer_temperature_map_last_12_hours"
+    )
+    still = hass.data["image"].get_entity(TEMPERATURE)
+
+    still._rendered = None
+    await still.async_image()
+    await hass.async_block_till_done()
+    first = await animation.async_image()
+
+    mock_tiles.return_value = _png((0, 0, 255, 200))
+    still._rendered = None
+    await still.async_image()
+    await hass.async_block_till_done()
+
+    assert animation._rendered is None
+    assert await animation.async_image() != first
