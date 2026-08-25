@@ -46,6 +46,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "range in view, contrast stretched",
         "empty": "no data in view, full scale",
         "fetched": "fetched",
+        "mixed": "tiles from different updates",
     },
     "nl": {
         "temp_new": "Temperatuur",
@@ -54,6 +55,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "bereik in beeld, contrast opgerekt",
         "empty": "geen data in beeld, volledige schaal",
         "fetched": "opgehaald",
+        "mixed": "tegels uit verschillende updates",
     },
     "de": {
         "temp_new": "Temperatur",
@@ -62,6 +64,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "Bereich im Bild, Kontrast gespreizt",
         "empty": "keine Daten im Bild, volle Skala",
         "fetched": "abgerufen",
+        "mixed": "Kacheln aus verschiedenen Aktualisierungen",
     },
     "fr": {
         "temp_new": "Température",
@@ -70,6 +73,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "plage visible, contraste étiré",
         "empty": "aucune donnée visible, échelle complète",
         "fetched": "récupéré",
+        "mixed": "tuiles de mises à jour différentes",
     },
 }
 

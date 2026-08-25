@@ -1,21 +1,24 @@
 """Air quality sensors for the OpenWeatherMap Startup-plan integration.
 
-Three sets of entities are created:
-  - current air quality, one entity per pollutant plus the OWM index
-  - forecast air quality for the rest of today
-  - forecast air quality for tomorrow
+Current conditions are published as numbers, one entity per pollutant plus the
+OpenWeather index, so they can be graphed and kept in long-term statistics.
 
-Each of those three also gets a text entity carrying OpenWeather's qualitative
-band for the index -- Good through Very Poor -- as an enum sensor, so it can be
-used in templates and shown on a dashboard without mapping 1-5 by hand.
+Everything is also published as a qualitative band -- Good, Fair, Moderate,
+Poor, Very Poor -- using OpenWeather's own per-pollutant boundaries. Bands
+exist for the current reading and for the today and tomorrow forecast windows.
 
-Forecast entities report the worst (highest) value expected inside their
-window, with the local time of that peak as an attribute. Windows are local
-calendar days, so today's shortens as the day goes on.
+Forecasts are bands only. A microgram figure two days out reads as a precision
+the model does not have, whereas "Moderate tomorrow" is actionable. The peak
+value behind each band is kept as an attribute for anyone who wants it.
+
+Forecast entities report the worst band expected inside their window, with the
+local time of that peak as an attribute. Windows are local calendar days, so
+today's shortens as the day goes on.
 """
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -39,15 +42,17 @@ from .const import (
     AQ_FORECAST_DAYS,
     AQI_LABELS,
     ATTRIBUTION,
+    BACKGROUND_BANDS,
+    BACKGROUND_ORDER,
+    BAND_ORDER,
     DEVICE_MODEL,
     DOMAIN,
     MANUFACTURER,
+    POLLUTANT_BANDS,
 )
 from .coordinator import OwmStartupCoordinator
 
 AQI_KEY = "aqi"
-
-AQI_OPTIONS = list(AQI_LABELS.values())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -137,21 +142,72 @@ async def async_setup_entry(
         OwmAirQualitySensor(coordinator, entry, description)
         for description in SENSOR_TYPES
     ]
-    entities.append(OwmAirQualityLabelSensor(coordinator, entry, AQI_DESCRIPTION))
+    entities.extend(
+        OwmAirQualityLabelSensor(coordinator, entry, description)
+        for description in BAND_TYPES
+    )
     for day_offset in AQ_FORECAST_DAYS:
         entities.extend(
-            OwmAirQualityForecastSensor(coordinator, entry, description, day_offset)
-            for description in SENSOR_TYPES
-        )
-        entities.append(
             OwmAirQualityForecastLabelSensor(
-                coordinator, entry, AQI_DESCRIPTION, day_offset
+                coordinator, entry, description, day_offset
             )
+            for description in BAND_TYPES
         )
     async_add_entities(entities)
 
 
 AQI_DESCRIPTION = SENSOR_TYPES[0]
+
+
+def band_scale(component: str) -> tuple[tuple[str, ...], tuple[float, ...]] | None:
+    """Return the vocabulary and boundaries a component is scored against.
+
+    Two scales are in play. OpenWeather publishes health bands for the index
+    and the six pollutants that feed it. NH3 and NO have no such scale, so they
+    are scored against Dutch ambient background instead, with a separate
+    vocabulary so the two can never be mistaken for each other.
+    """
+    if component in POLLUTANT_BANDS:
+        return BAND_ORDER, POLLUTANT_BANDS[component]
+    if component in BACKGROUND_BANDS:
+        return BACKGROUND_ORDER, BACKGROUND_BANDS[component]
+    if component == AQI_KEY:
+        return BAND_ORDER, ()
+    return None
+
+
+def band_options(component: str) -> list[str] | None:
+    """Return the states a component's band sensor can take."""
+    scale = band_scale(component)
+    return list(scale[0]) if scale else None
+
+
+def band_suffix(component: str) -> str:
+    """Return the translation-key suffix for a component's band sensor."""
+    return "_background_level" if component in BACKGROUND_BANDS else "_level"
+
+
+# Every component that can be scored at all.
+BAND_TYPES: tuple[OwmAirSensorDescription, ...] = tuple(
+    description
+    for description in SENSOR_TYPES
+    if band_scale(description.component) is not None
+)
+
+
+def band_for(component: str, value: float | int | None) -> str | None:
+    """Return the qualitative band for a pollutant reading."""
+    if value is None:
+        return None
+    if component == AQI_KEY:
+        return AQI_LABELS.get(int(value))
+    scale = band_scale(component)
+    if scale is None:
+        return None
+    order, bounds = scale
+    # bisect_right, not left: bands are [lower, upper), so a value sitting
+    # exactly on a boundary belongs to the band above it.
+    return order[bisect_right(bounds, value)]
 
 
 def _local_iso(timestamp: int) -> str:
@@ -330,7 +386,7 @@ class OwmAirQualityForecastSensor(OwmAirBaseSensor):
 
 
 class OwmAirQualityLabelSensor(OwmAirQualitySensor):
-    """OpenWeather's qualitative band for the current index."""
+    """OpenWeather's qualitative band for a current reading."""
 
     def __init__(
         self,
@@ -340,27 +396,43 @@ class OwmAirQualityLabelSensor(OwmAirQualitySensor):
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator, entry, description)
-        self._attr_unique_id = f"{entry.entry_id}_air_level"
-        self._attr_translation_key = "air_quality_level"
+        self._attr_unique_id = f"{entry.entry_id}_air_level_{description.key}"
+        self._attr_translation_key = (
+            f"{description.key}{band_suffix(description.component)}"
+        )
         self._attr_device_class = SensorDeviceClass.ENUM
-        self._attr_options = AQI_OPTIONS
+        self._attr_options = band_options(description.component)
         # An enum carries no unit and must not enter statistics.
         self._attr_state_class = None
         self._attr_native_unit_of_measurement = None
+        self._attr_suggested_display_precision = None
+
+    @property
+    def _reading(self) -> float | int | None:
+        """Return the number this band is derived from."""
+        air = self.coordinator.data.air
+        if air is None:
+            return None
+        return _value(air, self.entity_description.component)
 
     @property
     def native_value(self) -> str | None:
-        """Return the band name for the current index."""
-        return AQI_LABELS.get(super().native_value)
+        """Return the band name for the current reading."""
+        return band_for(self.entity_description.component, self._reading)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the numeric index alongside the band."""
-        return {"index": super().native_value}
+        """Return the number the band came from."""
+        key = "index" if self.entity_description.component == AQI_KEY else "value"
+        return {key: self._reading}
 
 
 class OwmAirQualityForecastLabelSensor(OwmAirQualityForecastSensor):
-    """OpenWeather's qualitative band for a window's worst index."""
+    """OpenWeather's qualitative band for a window's worst reading.
+
+    Bands are monotonic in concentration, so the worst band in a window is the
+    band of the window's peak value.
+    """
 
     def __init__(
         self,
@@ -371,22 +443,27 @@ class OwmAirQualityForecastLabelSensor(OwmAirQualityForecastSensor):
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator, entry, description, day_offset)
-        self._attr_unique_id = f"{entry.entry_id}_air_forecast_{self._slug}_level"
-        self._attr_translation_key = f"air_quality_level_{self._slug}"
+        self._attr_unique_id = (
+            f"{entry.entry_id}_air_forecast_{self._slug}_level_{description.key}"
+        )
+        self._attr_translation_key = (
+            f"{description.key}{band_suffix(description.component)}_{self._slug}"
+        )
         self._attr_device_class = SensorDeviceClass.ENUM
-        self._attr_options = AQI_OPTIONS
+        self._attr_options = band_options(description.component)
         self._attr_native_unit_of_measurement = None
+        self._attr_suggested_display_precision = None
 
     @property
     def native_value(self) -> str | None:
-        """Return the band name for the window's peak index."""
-        return AQI_LABELS.get(super().native_value)
+        """Return the band name for the window's peak reading."""
+        return band_for(self.entity_description.component, super().native_value)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the window details, plus the numeric index."""
+        """Return the window details, plus the number the band came from."""
         attributes = dict(super().extra_state_attributes)
-        attributes["index"] = super().native_value
-        # The hourly timeline belongs on the numeric sensor, not here.
-        attributes.pop("forecast", None)
+        key = "index" if self.entity_description.component == AQI_KEY else "value"
+        attributes[key] = super().native_value
+        attributes.pop("level", None)
         return attributes

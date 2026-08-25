@@ -65,7 +65,13 @@
           }
         }
       },
-      "air_quality_level": {
+      "carbon_monoxide": {
+        "name": "Carbon monoxide"
+      },
+      "ammonia": {
+        "name": "Ammonia"
+      },
+      "aqi_level": {
         "name": "Air quality",
         "state": {
           "good": "Good",
@@ -75,10 +81,7 @@
           "very_poor": "Very poor"
         }
       },
-      "air_quality_index_forecast_today": {
-        "name": "Air quality index forecast today"
-      },
-      "air_quality_level_today": {
+      "aqi_level_today": {
         "name": "Air quality today",
         "state": {
           "good": "Good",
@@ -88,10 +91,7 @@
           "very_poor": "Very poor"
         }
       },
-      "air_quality_index_forecast_tomorrow": {
-        "name": "Air quality index forecast tomorrow"
-      },
-      "air_quality_level_tomorrow": {
+      "aqi_level_tomorrow": {
         "name": "Air quality tomorrow",
         "state": {
           "good": "Good",
@@ -101,67 +101,253 @@
           "very_poor": "Very poor"
         }
       },
-      "carbon_monoxide": {
-        "name": "Carbon monoxide"
+      "pm2_5_level": {
+        "name": "PM2.5 level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "carbon_monoxide_forecast_today": {
-        "name": "Carbon monoxide forecast today"
+      "pm2_5_level_today": {
+        "name": "PM2.5 level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "carbon_monoxide_forecast_tomorrow": {
-        "name": "Carbon monoxide forecast tomorrow"
+      "pm2_5_level_tomorrow": {
+        "name": "PM2.5 level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "ammonia": {
-        "name": "Ammonia"
+      "pm10_level": {
+        "name": "PM10 level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "ammonia_forecast_today": {
-        "name": "Ammonia forecast today"
+      "pm10_level_today": {
+        "name": "PM10 level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "ammonia_forecast_tomorrow": {
-        "name": "Ammonia forecast tomorrow"
+      "pm10_level_tomorrow": {
+        "name": "PM10 level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "pm2_5_forecast_today": {
-        "name": "PM2.5 forecast today"
+      "o3_level": {
+        "name": "Ozone level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "pm2_5_forecast_tomorrow": {
-        "name": "PM2.5 forecast tomorrow"
+      "o3_level_today": {
+        "name": "Ozone level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "pm10_forecast_today": {
-        "name": "PM10 forecast today"
+      "o3_level_tomorrow": {
+        "name": "Ozone level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "pm10_forecast_tomorrow": {
-        "name": "PM10 forecast tomorrow"
+      "no2_level": {
+        "name": "Nitrogen dioxide level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "o3_forecast_today": {
-        "name": "Ozone forecast today"
+      "no2_level_today": {
+        "name": "Nitrogen dioxide level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "o3_forecast_tomorrow": {
-        "name": "Ozone forecast tomorrow"
+      "no2_level_tomorrow": {
+        "name": "Nitrogen dioxide level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "no2_forecast_today": {
-        "name": "Nitrogen dioxide forecast today"
+      "so2_level": {
+        "name": "Sulphur dioxide level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "no2_forecast_tomorrow": {
-        "name": "Nitrogen dioxide forecast tomorrow"
+      "so2_level_today": {
+        "name": "Sulphur dioxide level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "no_forecast_today": {
-        "name": "Nitrogen monoxide forecast today"
+      "so2_level_tomorrow": {
+        "name": "Sulphur dioxide level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "no_forecast_tomorrow": {
-        "name": "Nitrogen monoxide forecast tomorrow"
+      "co_level": {
+        "name": "Carbon monoxide level",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "so2_forecast_today": {
-        "name": "Sulphur dioxide forecast today"
+      "co_level_today": {
+        "name": "Carbon monoxide level today",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
       },
-      "so2_forecast_tomorrow": {
-        "name": "Sulphur dioxide forecast tomorrow"
+      "co_level_tomorrow": {
+        "name": "Carbon monoxide level tomorrow",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "moderate": "Moderate",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
+      },
+      "nh3_background_level": {
+        "name": "Ammonia vs background",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
+      },
+      "nh3_background_level_today": {
+        "name": "Ammonia vs background today",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
+      },
+      "nh3_background_level_tomorrow": {
+        "name": "Ammonia vs background tomorrow",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
+      },
+      "no_background_level": {
+        "name": "Nitrogen monoxide vs background",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
+      },
+      "no_background_level_today": {
+        "name": "Nitrogen monoxide vs background today",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
+      },
+      "no_background_level_tomorrow": {
+        "name": "Nitrogen monoxide vs background tomorrow",
+        "state": {
+          "low": "Low",
+          "typical": "Typical",
+          "elevated": "Elevated",
+          "high": "High"
+        }
       }
     },
     "image": {
       "temperature_map": {
         "name": "Temperature map"
       },
+      "temperature_map_animation": {
+        "name": "Temperature map, last 12 hours"
+      },
       "clouds_map": {
         "name": "Cloud map"
+      },
+      "clouds_map_animation": {
+        "name": "Cloud map, last 12 hours"
       }
     }
   }

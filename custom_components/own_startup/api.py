@@ -117,6 +117,16 @@ class OwmApiClient:
                         f"OpenWeatherMap call allowance exceeded on {label}"
                     )
                 response.raise_for_status()
+                if not as_json and _LOGGER.isEnabledFor(logging.DEBUG):
+                    # Tile vintage. When a grid comes back visibly mismatched
+                    # these headers are the evidence for which tiles are stale.
+                    _LOGGER.debug(
+                        "%s: last-modified=%s age=%s date=%s",
+                        label,
+                        response.headers.get("Last-Modified"),
+                        response.headers.get("Age"),
+                        response.headers.get("Date"),
+                    )
                 return await (response.json() if as_json else response.read())
         except OwmError:
             raise
@@ -144,7 +154,7 @@ class OwmApiClient:
         """Return one weather map tile as PNG bytes."""
         return await self._fetch(
             f"{MAP_URL}/{layer}/{z}/{x}/{y}.png",
-            f"map/{layer}",
+            f"map/{layer}/{z}/{x}/{y}",
             {"appid": self._api_key},
             as_json=False,
         )

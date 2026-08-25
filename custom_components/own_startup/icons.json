@@ -4,82 +4,253 @@
       "air_quality_index": {
         "default": "mdi:air-filter"
       },
-      "air_quality_level": {
-        "default": "mdi:air-filter"
-      },
-      "air_quality_index_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
-      },
-      "air_quality_level_today": {
-        "default": "mdi:air-filter"
-      },
-      "air_quality_index_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
-      },
-      "air_quality_level_tomorrow": {
-        "default": "mdi:air-filter"
-      },
       "carbon_monoxide": {
         "default": "mdi:molecule-co"
-      },
-      "carbon_monoxide_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
-      },
-      "carbon_monoxide_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
       },
       "ammonia": {
         "default": "mdi:molecule"
       },
-      "ammonia_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "aqi_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "ammonia_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "aqi_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "pm2_5_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "aqi_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "pm2_5_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "pm2_5_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "pm10_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "pm2_5_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "pm10_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "pm2_5_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "o3_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "pm10_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "o3_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "pm10_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "no2_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "pm10_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "no2_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "o3_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "no_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "o3_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "no_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "o3_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "so2_forecast_today": {
-        "default": "mdi:chart-timeline-variant"
+      "no2_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
       },
-      "so2_forecast_tomorrow": {
-        "default": "mdi:chart-timeline-variant"
+      "no2_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "no2_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "so2_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "so2_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "so2_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "co_level": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "co_level_today": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "co_level_tomorrow": {
+        "default": "mdi:air-filter",
+        "state": {
+          "good": "mdi:gauge-empty",
+          "fair": "mdi:gauge-low",
+          "moderate": "mdi:gauge",
+          "poor": "mdi:gauge-full",
+          "very_poor": "mdi:alert-octagon"
+        }
+      },
+      "nh3_background_level": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "nh3_background_level_today": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "nh3_background_level_tomorrow": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "no_background_level": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "no_background_level_today": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "no_background_level_tomorrow": {
+        "default": "mdi:chart-bell-curve"
       }
     },
     "image": {
       "temperature_map": {
         "default": "mdi:thermometer"
       },
+      "temperature_map_animation": {
+        "default": "mdi:play-box-outline"
+      },
       "clouds_map": {
         "default": "mdi:weather-cloudy"
+      },
+      "clouds_map_animation": {
+        "default": "mdi:play-box-outline"
       }
     }
   }

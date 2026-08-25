@@ -28,14 +28,14 @@ import logging
 import math
 from pathlib import Path
 import time
+from typing import Any
 
 import aiohttp
 
 from homeassistant.components.image import ImageEntity, ImageEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, Platform
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -45,6 +45,7 @@ from homeassistant.util import dt as dt_util
 from . import legend as legend_module
 from .api import REQUEST_TIMEOUT, OwmError
 from .const import (
+    ANIMATION_MIN_FRAMES,
     ATTRIBUTION,
     BASEMAP_MAX_AGE,
     CONF_BASEMAP_ATTRIBUTION,
@@ -57,12 +58,15 @@ from .const import (
     DEFAULT_LANGUAGE,
     DEVICE_MODEL,
     DOMAIN,
+    FRAME_WINDOW_HOURS,
     LEGEND_HEIGHT,
     MANUFACTURER,
     MAP_GRID,
     MAP_TILE_SIZE,
     MAP_VIEW,
     MAP_ZOOM,
+    SEAM_FLOOR,
+    SEAM_RATIO,
     USER_AGENT,
     WIND_ARROW_BASE,
     WIND_ARROW_LAYERS,
@@ -70,6 +74,7 @@ from .const import (
     WIND_ARROW_PER_MS,
 )
 from .coordinator import OwmStartupCoordinator
+from .frames import FrameStore, grid_hash, image_hash
 from .redaction import redact
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,10 +99,6 @@ MAP_TYPES: tuple[OwmMapDescription, ...] = (
         translation_key="clouds_map",
     ),
 )
-
-# Entities from earlier versions that are no longer created. Their registry
-# entries are removed on setup so they do not linger as unavailable.
-OBSOLETE_KEYS: tuple[str, ...] = ("precipitation_map",)
 
 
 def tile_grid(
@@ -127,22 +128,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up the weather map images."""
     coordinator: OwmStartupCoordinator = entry.runtime_data
-    _async_remove_obsolete_entities(hass, entry)
-    async_add_entities(
-        OwmMapImage(coordinator, entry, description) for description in MAP_TYPES
-    )
+    root = Path(hass.config.path(".storage", f"{DOMAIN}_frames", entry.entry_id))
 
-
-@callback
-def _async_remove_obsolete_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Drop registry entries for image entities this version no longer creates."""
-    registry = er.async_get(hass)
-    for key in OBSOLETE_KEYS:
-        entity_id = registry.async_get_entity_id(
-            Platform.IMAGE, DOMAIN, f"{entry.entry_id}_{key}"
-        )
-        if entity_id:
-            registry.async_remove(entity_id)
+    entities: list[ImageEntity] = []
+    for description in MAP_TYPES:
+        store = FrameStore(hass, root, description.layer)
+        entities.append(OwmMapImage(coordinator, entry, description, store))
+        entities.append(OwmMapAnimation(coordinator, entry, description, store))
+    async_add_entities(entities)
 
 
 class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
@@ -159,11 +152,13 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         coordinator: OwmStartupCoordinator,
         entry: ConfigEntry,
         description: OwmMapDescription,
+        store: FrameStore,
     ) -> None:
         """Initialise the image entity."""
         super().__init__(coordinator)
         ImageEntity.__init__(self, coordinator.hass)
         self.entity_description = description
+        self._store = store
         self._entry = entry
         self._rendered: bytes | None = None
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -214,6 +209,9 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         """
         self._rendered = None
         self._attr_image_last_updated = dt_util.utcnow()
+        # Top up the animation in the background. Without this the sequence
+        # would only fill while somebody had the map on screen.
+        self.hass.async_create_task(self.async_capture_if_changed())
         super()._handle_coordinator_update()
 
     async def async_image(self) -> bytes | None:
@@ -248,19 +246,79 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             if speed is not None and bearing is not None:
                 wind = (speed, bearing)
 
-        self._rendered = await self.hass.async_add_executor_job(
-            self._compose,
-            basemap,
-            overlay,
-            self._focus,
-            f"{self._basemap_attribution} - {ATTRIBUTION}",
-            self.entity_description.layer,
-            self._contrast_stretch,
-            self._language,
-            fetched_at,
-            wind,
-        )
+        try:
+            self._rendered = await self.hass.async_add_executor_job(
+                self._compose,
+                basemap,
+                overlay,
+                self._focus,
+                f"{self._basemap_attribution} - {ATTRIBUTION}",
+                self.entity_description.layer,
+                self._contrast_stretch,
+                self._language,
+                fetched_at,
+                wind,
+            )
+            # Hashing decodes nine PNGs; that does not belong on the event loop.
+            frame_hash = await self.hass.async_add_executor_job(grid_hash, overlay)
+            await self._store.async_add(self._rendered, frame_hash)
+            # The probe compares against the centre tile, so keep it in step
+            # with what was just fetched.
+            centre = overlay.get((MAP_GRID // 2, MAP_GRID // 2))
+            if centre is not None:
+                self._store.probe_hash = await self.hass.async_add_executor_job(
+                    image_hash, centre
+                )
+        except (OSError, ValueError) as err:
+            # A tile that arrived truncated or is not a PNG at all. Pillow
+            # raises out of the executor, past the fetch error handling.
+            # Better a missing image than a traceback or half a map.
+            _LOGGER.warning(
+                "Could not decode the %s tiles: %s",
+                self.entity_description.layer,
+                err,
+            )
+            return None
         return self._rendered
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the capture state recorded before the last restart."""
+        await super().async_added_to_hass()
+        await self._store.async_load()
+
+    async def async_capture_if_changed(self) -> None:
+        """Fetch one tile, and the rest only if the weather moved.
+
+        Called on the coordinator's schedule so the sequence keeps filling
+        while nobody is looking at the map. A no-change refresh costs one tile
+        instead of nine.
+        """
+        x0, y0 = self._origin
+        offset = MAP_GRID // 2
+        try:
+            probe = await self.coordinator.client.async_get_map_tile(
+                self.entity_description.layer, MAP_ZOOM, x0 + offset, y0 + offset
+            )
+            probe_hash = await self.hass.async_add_executor_job(image_hash, probe)
+            if probe_hash == self._store.probe_hash:
+                return
+
+            # Something moved: render in full; async_image stores the frame and
+            # advances the probe hash. The hash is deliberately not set here:
+            # if the grid fetch then fails, the next refresh must try again
+            # rather than treat the missed frame as already captured.
+            self._rendered = None
+            await self.async_image()
+        except Exception as err:  # noqa: BLE001
+            # Nothing awaits this: it runs as a background task off the
+            # coordinator update. An escaping exception would surface as an
+            # unhandled task error and tell the user nothing useful. The
+            # animation simply misses a frame.
+            _LOGGER.debug(
+                "Could not top up the %s sequence: %s",
+                self.entity_description.layer,
+                redact(f"{type(err).__name__}: {err}"),
+            )
 
     async def _async_fetch_grid(
         self, fetch: Callable[[int, int], Awaitable[bytes]]
@@ -345,6 +403,21 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         draw.ellipse((x - 3, y - 3, x + 3, y + 3), outline=(0, 0, 0, 130), width=1)
 
         canvas.alpha_composite(marker)
+
+    @staticmethod
+    def _draw_notice(canvas, text: str) -> None:
+        """Draw a warning banner across the top of the map. Runs in an executor."""
+        from PIL import Image, ImageDraw
+
+        from .legend import _font
+
+        font = _font(11)
+        banner = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(banner)
+        width = draw.textlength(text, font=font) + 14
+        draw.rectangle((0, 0, width, 20), fill=(120, 40, 40, 210))
+        draw.text((7, 4), text, font=font, fill=(255, 235, 235, 255))
+        canvas.alpha_composite(banner)
 
     @staticmethod
     def _draw_wind(canvas, x: float, y: float, speed: float, bearing: float) -> None:
@@ -444,6 +517,22 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
 
         # The range is measured on the data layer alone, never on the composite:
         # matching colours through a basemap would be meaningless.
+        seams: list[tuple[str, int]] = [
+            (axis, boundary - offset)
+            for axis, offset in (("x", left), ("y", top))
+            for boundary in (MAP_TILE_SIZE, MAP_TILE_SIZE * 2)
+            if 0 < boundary - offset < MAP_VIEW
+        ]
+        mixed_tiles = seam_mismatch(overlay_view, seams)
+        if mixed_tiles:
+            _LOGGER.warning(
+                "The %s tiles do not line up across a tile boundary. This is an "
+                "upstream artefact: OpenWeather served the grid from more than "
+                "one model run. The map is labelled accordingly and should "
+                "correct itself on the next update",
+                layer,
+            )
+
         bounds = legend_module.observed_range(overlay_view, layer)
         stretched = contrast_stretch and bounds is not None
         if stretched:
@@ -459,6 +548,11 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         # The configured location. Normally dead centre, but not when the grid
         # was clamped at a pole or the antimeridian, so it is placed from the
         # actual crop rather than assumed.
+        if mixed_tiles:
+            # On the map rather than in the legend title: it is a warning about
+            # the data, and the title line has no room beside the timestamp.
+            OwmMapImage._draw_notice(canvas, legend_module.translate(language, "mixed"))
+
         marker_x, marker_y = focus[0] - left, focus[1] - top
         if wind is not None:
             OwmMapImage._draw_wind(canvas, marker_x, marker_y, *wind)
@@ -476,6 +570,69 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         buffer = io.BytesIO()
         canvas.save(buffer, format="PNG", optimize=True)
         return buffer.getvalue()
+
+
+def seam_mismatch(overlay, seams: list[tuple[str, int]]) -> bool:
+    """Return whether the layer steps discontinuously across a tile seam.
+
+    OpenWeather sometimes serves a grid assembled from two model runs, leaving
+    a straight brightness step along a tile boundary. Weather fields are smooth
+    at this scale, so a jump at a seam that is far larger than the gradient
+    just beside it means the tiles disagree rather than the weather does.
+    """
+    pixels = overlay.convert("RGBA")
+    width, height = pixels.size
+
+    def column_delta(x: int) -> float:
+        if x < 1 or x >= width:
+            return 0.0
+        left, right = (
+            pixels.crop((x - 1, 0, x, height)),
+            pixels.crop((x, 0, x + 1, height)),
+        )
+        return _mean_delta(left, right)
+
+    def row_delta(y: int) -> float:
+        if y < 1 or y >= height:
+            return 0.0
+        above, below = (
+            pixels.crop((0, y - 1, width, y)),
+            pixels.crop((0, y, width, y + 1)),
+        )
+        return _mean_delta(above, below)
+
+    for axis, position in seams:
+        delta = column_delta(position) if axis == "x" else row_delta(position)
+        neighbours = [
+            column_delta(position + offset)
+            if axis == "x"
+            else row_delta(position + offset)
+            for offset in (-4, -3, 3, 4)
+        ]
+        baseline = sum(neighbours) / len(neighbours) if neighbours else 0.0
+        if delta > SEAM_FLOOR and delta > baseline * SEAM_RATIO:
+            _LOGGER.debug(
+                "Tile seam at %s=%d steps by %.1f against a local gradient of "
+                "%.1f; the grid is probably mixing model runs",
+                axis,
+                position,
+                delta,
+                baseline,
+            )
+            return True
+    return False
+
+
+def _mean_delta(first, second) -> float:
+    """Mean absolute RGBA difference between two equal-sized strips."""
+    a, b = list(first.getdata()), list(second.getdata())
+    if not a:
+        return 0.0
+    total = sum(
+        abs(p[0] - q[0]) + abs(p[1] - q[1]) + abs(p[2] - q[2]) + abs(p[3] - q[3])
+        for p, q in zip(a, b, strict=True)
+    )
+    return total / len(a)
 
 
 def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
@@ -538,3 +695,90 @@ def _write_cached(path: Path, data: bytes) -> None:
         path.write_bytes(data)
     except OSError as err:
         _LOGGER.debug("Could not cache basemap tile: %s", err)
+
+
+class OwmMapAnimation(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
+    """The recent history of a layer, as an animated WebP.
+
+    WebP rather than GIF: the stretched temperature ramp over a basemap needs
+    more than 256 colours, and every current browser plays animated WebP in a
+    plain img tag.
+    """
+
+    _attr_attribution = ATTRIBUTION
+    _attr_content_type = "image/webp"
+    _attr_has_entity_name = True
+
+    entity_description: OwmMapDescription
+
+    def __init__(
+        self,
+        coordinator: OwmStartupCoordinator,
+        entry: ConfigEntry,
+        description: OwmMapDescription,
+        store: FrameStore,
+    ) -> None:
+        """Initialise the animation entity."""
+        super().__init__(coordinator)
+        ImageEntity.__init__(self, coordinator.hass)
+        self.entity_description = description
+        self._store = store
+        self._rendered: bytes | None = None
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}_animation"
+        self._attr_translation_key = f"{description.key}_animation"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer=MANUFACTURER,
+            model=DEVICE_MODEL,
+            entry_type=DeviceEntryType.SERVICE,
+            configuration_url="https://openweathermap.org/price",
+        )
+        self._attr_image_last_updated = dt_util.utcnow()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Report how much history has accumulated.
+
+        Worth surfacing: the sequence starts empty after a fresh install and
+        an entity that simply shows nothing would look broken.
+        """
+        frames = self._store.frames()
+        return {
+            "frames": len(frames),
+            "window_hours": FRAME_WINDOW_HOURS,
+            "oldest_frame": frames[0].taken_at.isoformat() if frames else None,
+            "newest_frame": frames[-1].taken_at.isoformat() if frames else None,
+            # One frame renders as a still; two or more animate.
+            "animating": len(frames) > 1,
+            "minimum_frames": ANIMATION_MIN_FRAMES,
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the store, so a new frame shows up without waiting a cycle."""
+        await super().async_added_to_hass()
+        await self._store.async_load()
+        self._store.add_listener(self._handle_new_frame)
+
+    @callback
+    def _handle_new_frame(self) -> None:
+        """Rebuild on the next request and publish the new frame count."""
+        self._rendered = None
+        self._attr_image_last_updated = dt_util.utcnow()
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Invalidate the animation and top up the sequence."""
+        self._rendered = None
+        self._attr_image_last_updated = dt_util.utcnow()
+        super()._handle_coordinator_update()
+
+    async def async_image(self) -> bytes | None:
+        """Return the animation, or None until there is enough history."""
+        if self._rendered is not None:
+            return self._rendered
+        self._rendered = await self.hass.async_add_executor_job(
+            self._store.build_animation
+        )
+        return self._rendered

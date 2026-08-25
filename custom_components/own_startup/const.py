@@ -117,6 +117,24 @@ USER_AGENT: Final = "owm_startup (+https://github.com/lancer73/owm_startup)"
 # is a local wind indicator, not a wind field. A field of arrows is a Weather
 # Maps 2.0 feature (WND/WNDUV with arrow_step), which the Startup plan does not
 # include, and the Maps 1.0 wind layer encodes speed only.
+# Tile seam detection. A step larger than SEAM_FLOOR in mean RGBA difference,
+# and more than SEAM_RATIO times the gradient just beside it, is treated as the
+# tiles disagreeing rather than the weather changing.
+SEAM_FLOOR: Final = 8.0
+SEAM_RATIO: Final = 3.0
+
+# Animated map sequence. Frames can only be collected going forward: Maps 1.0
+# has no time parameter, and historical tiles are a Maps 2.0 product.
+FRAME_WINDOW_HOURS: Final = 12
+ANIMATION_FRAME_MS: Final = 700
+# One frame is served as a still. Returning nothing would leave the entity
+# broken on the dashboard for the couple of hours it takes upstream to change,
+# which looks like a fault rather than like a sequence still filling.
+ANIMATION_MIN_FRAMES: Final = 1
+# Progress bar drawn along the seam between the map and the legend strip, so it
+# covers neither the data nor the text.
+PROGRESS_BAR_HEIGHT: Final = 4
+
 WIND_ARROW_LAYERS: Final = ("clouds_new",)
 # Arrow length in pixels at zero wind, and the growth per m/s up to the cap.
 WIND_ARROW_BASE: Final = 22
@@ -201,4 +219,42 @@ AQI_LABELS: Final = {
     3: "moderate",
     4: "poor",
     5: "very_poor",
+}
+BAND_ORDER: Final = ("good", "fair", "moderate", "poor", "very_poor")
+
+# Per-pollutant band boundaries in µg/m³, from OpenWeather's published scale.
+# Each tuple is the lower edge of Fair, Moderate, Poor and Very Poor; a value
+# below the first entry is Good, at or above the last is Very Poor.
+#
+# NH3 and NO are absent on purpose: OpenWeather lists them as parameters that
+# do not affect the index and publishes no bands for them.
+# Relative-to-background bands for the two pollutants OpenWeather scores but
+# does not scale. These are NOT health bands and deliberately use a different
+# vocabulary, so a dashboard cannot confuse them with the index above.
+#
+# Reference: Dutch ambient measurements.
+#   NH3 - RIVM/CLO "Ammoniak in lucht": national mean of 35 measuring sites was
+#         5.4 µg/m³ (2024), 4.8 (2023), 6.7 (2022), 6.2 (2021); lowest 1-2 at
+#         the coast, rising to about 15 in intensive livestock areas.
+#   NO  - derived, not published directly. RIVM reports NOx and NO2 separately;
+#         NO is the difference. For 2020: NOx 15 (regional), 24 (urban), 43
+#         (traffic) µg/m³ as NO2-equivalent, against NO2 of roughly 12, 16 and
+#         20, leaving about 3, 8 and 23 as NO2-equivalent, or roughly 2, 5 and
+#         15 µg/m³ as NO once scaled by the mass ratio 30/46.
+#
+# Both are annual means applied to hourly model values, so read them as "how
+# does this hour compare with a normal year around here", not as measurements.
+BACKGROUND_ORDER: Final = ("low", "typical", "elevated", "high")
+BACKGROUND_BANDS: Final = {
+    "nh3": (2, 8, 15),
+    "no": (2, 10, 25),
+}
+
+POLLUTANT_BANDS: Final = {
+    "so2": (20, 80, 250, 350),
+    "no2": (40, 70, 150, 200),
+    "pm10": (20, 50, 100, 200),
+    "pm2_5": (10, 25, 50, 75),
+    "o3": (60, 100, 140, 180),
+    "co": (4400, 9400, 12400, 15400),
 }
