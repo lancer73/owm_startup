@@ -10,18 +10,81 @@ OpenWeatherMap **Startup** subscription of the classic 2.5 collection. It does
 | --- | --- |
 | `weather.*` — current conditions, Home Assistant hourly forecast carrying OpenWeather's 3-hour points (5 days), daily forecast up to 16 days | `/data/2.5/weather`, `/data/2.5/forecast`, `/data/2.5/forecast/daily` |
 | 9 current air quality sensors | `/data/2.5/air_pollution` |
-| 18 air quality forecast sensors (today and tomorrow) | `/data/2.5/air_pollution/forecast` |
-| 3 air quality band sensors (now, today, tomorrow) | both air pollution endpoints |
+| 9 current air quality band sensors | `/data/2.5/air_pollution` |
+| 18 forecast air quality band sensors (today and tomorrow) | `/data/2.5/air_pollution/forecast` |
 | 2 weather map images (temperature, clouds) | `tile.openweathermap.org/map` |
+| 2 animated map images, last 12 hours | frames kept from the above |
 
 Air quality sensors: AQI, PM2.5, PM10, O₃, NO₂, NO, SO₂, CO, NH₃.
 
-Alongside the numeric index, three **enum** sensors carry OpenWeather's
-qualitative band — Good, Fair, Moderate, Poor, Very poor — for now, today and
-tomorrow. Their states are the untranslated keys (`good`, `fair`, `moderate`,
-`poor`, `very_poor`), so templates and automations stay stable while the
-frontend shows the translated label. The numeric index is on each as an `index`
-attribute.
+### Bands
+
+Every pollutant OpenWeather publishes a scale for — the index plus PM2.5, PM10,
+O₃, NO₂, SO₂ and CO — also gets an **enum** sensor carrying the qualitative
+band: Good, Fair, Moderate, Poor, Very poor. Boundaries are OpenWeather's own,
+from the table in their Air Pollution documentation.
+
+**NH₃ and NO are scored differently.** OpenWeather lists them as parameters that
+do not affect the index and publishes no scale for them, and there is no ambient
+health limit for either — the only published ammonia figures are occupational
+limits for an 8-hour shift, roughly 17,000 µg/m³, which is 87× the maximum this
+API can report. A health band built on those would read "Good" at every possible
+value.
+
+Instead they are scored **against Dutch ambient background**, with a deliberately
+different vocabulary — Low, Typical, Elevated, High — so a dashboard cannot
+mistake them for the index. Entities are named `... vs background`.
+
+| | Low | Typical | Elevated | High |
+| --- | --- | --- | --- | --- |
+| NH₃ | < 2 | 2–8 | 8–15 | ≥ 15 |
+| NO | < 2 | 2–10 | 10–25 | ≥ 25 |
+
+µg/m³. NH₃ comes from RIVM/CLO measurements: the national mean across 35 sites
+was 5.4 µg/m³ in 2024 (4.8 in 2023, 6.7 in 2022), the lowest values 1–2 at the
+coast, rising to about 15 in intensive livestock areas. NO is derived rather than
+published: RIVM reports NOx and NO₂ separately, and the difference gives roughly
+2 µg/m³ regional, 5 urban and 15 traffic-exposed once converted from
+NO₂-equivalent. Treat the NO boundaries as the softer of the two.
+
+These are annual means applied to hourly model values, so read them as "how does
+this hour compare with a normal year around here", not as a measurement or a
+health verdict.
+
+Sensor states are the untranslated keys (`good`, `fair`, `moderate`, `poor`,
+`very_poor`), so templates and automations stay stable while the frontend shows
+the translated label. The number behind each band is kept as an attribute:
+`index` for the index, `value` for a pollutant.
+
+The health band sensors change icon with severity — an empty gauge at Good
+through a full one at Poor, and an alert octagon at Very poor. The background
+sensors deliberately keep one glyph: escalating them would imply a health
+judgement that scale does not make.
+
+**Colour cannot come from the integration.** Home Assistant's icon translations
+set the glyph, not its colour, so state colouring is a dashboard job. With
+Mushroom:
+
+```yaml
+type: custom:mushroom-template-card
+entity: sensor.<name>_pm2_5_level
+icon: mdi:blur
+icon_color: >-
+  {{ {'good': 'green', 'fair': 'light-green', 'moderate': 'orange',
+      'poor': 'red', 'very_poor': 'purple'}[states(entity)] }}
+primary: PM2.5
+secondary: "{{ states(entity) }}"
+```
+
+Or with `card_mod` on a standard entities card, keyed on the same states. Either
+way the states are the stable untranslated keys, so the mapping survives a
+language change.
+
+**Forecasts are bands only.** A microgram figure two days out reads as a
+precision the model does not have, while "Moderate tomorrow" is something you
+can act on. The peak concentration behind each forecast band is still there as
+an attribute, along with `peak_at` and the window bounds. Current readings stay
+numeric so they can be graphed and kept in long-term statistics.
 
 OpenWeather's air pollution forecast runs hourly for about four days. Limiting
 the sensors to today and tomorrow is a deliberate choice — those are the windows
@@ -162,6 +225,73 @@ keyed provider such as MapTiler or Thunderforest, or your own tile server.
 Attribution for both the basemap and OpenWeather is burned into the corner of
 each image, which is the only reliable way to satisfy ODbL on a dashboard card.
 
+### Animated maps
+
+Each layer also gets an animated WebP of the last 12 hours:
+`image.*_temperature_map_last_12_hours` and the cloud equivalent.
+
+**The sequence only builds forwards.** Maps 1.0 tiles have no time parameter and
+historical tiles are a Maps 2.0 product, so there is no way to backfill.
+
+A fresh install therefore starts with nothing, then one frame, then a sequence.
+The single-frame stage is served as a **still image** rather than as nothing:
+upstream only changes every couple of hours, so returning nothing would leave a
+broken image on the dashboard for that long, which looks like a fault instead of
+a sequence still filling. The `animating` attribute says which state it is in,
+alongside `frames`, `oldest_frame` and `newest_frame`.
+
+Only the very first period — before any frame has been captured — has no image
+at all.
+
+Frames are captured on the coordinator's schedule so the sequence keeps filling
+while nobody is watching, and this is kept cheap two ways:
+
+- **Probe first.** One tile — the centre one, containing your coordinates — is
+  fetched and compared with the last. Only if it differs are the other eight
+  pulled. Since upstream refreshes every two hours while polling runs every
+  thirty minutes, roughly three refreshes in four cost a single tile instead of
+  nine.
+- **Opportunistic capture.** When the still map is rendered for the frontend all
+  nine tiles are already in hand, so that frame is stored for free.
+
+Comparison is on decoded pixels, not file bytes: an upstream re-encode of
+unchanged data would otherwise store a duplicate every time.
+
+The probe's limitation is real — a change confined to the edge of the view is
+missed until it reaches the centre tile, or until somebody opens the map. That
+is the price of one tile instead of nine.
+
+A progress bar runs along the seam between the map and the legend, filling from
+the first frame to the last. It tracks **elapsed time**, not frame number, so it
+advances unevenly — and that is the point. A large jump means a gap: either the
+weather held still for hours, or the integration was not running. Each frame
+also carries its own capture time, burned in by the renderer, so the exact
+timing of a gap is readable.
+
+### Outages
+
+- Frames outside the 12-hour window are filtered at playback as well as pruned
+  on write. A long outage leaves stale files on disk, and they must not play
+  simply because nothing has been written since.
+- The probe hash only advances once a frame has actually been stored. If the
+  probe succeeds but the grid fetch then fails, the next refresh retries rather
+  than treating the missed frame as captured.
+- The probe and frame hashes are persisted, so a restart does not look like a
+  change and store a duplicate of the frame already on disk.
+- A frame file that will not open is dropped and deleted rather than failing
+  the whole animation.
+- A failed write, a full disk or an unreachable API costs a frame and nothing
+  else: capture runs unawaited and swallows its errors deliberately.
+
+Removing the integration deletes its captured frames. The basemap cache is
+shared between entries rather than keyed by entry, so it is deleted only when
+the last entry goes.
+
+WebP rather than GIF: the stretched temperature ramp over a basemap needs more
+than 256 colours, and every current browser plays animated WebP in a plain
+`img` tag. Frames live in `.storage/owm_startup_frames/` and anything older than
+12 hours is pruned on write.
+
 ### Wind arrow
 
 The cloud map draws the current wind at your coordinates: an arrow pointing the
@@ -176,6 +306,33 @@ which needs a Developer subscription; the Maps 1.0 `wind_new` layer available on
 Startup encodes speed as colour only, with no direction to recover. The arrow
 costs no extra API calls — the vector is already in the current-weather payload
 the coordinator fetches.
+
+### Mismatched tiles
+
+OpenWeather sometimes serves a grid assembled from more than one model run,
+leaving a straight brightness step along a tile boundary. It shows up on both
+layers at once, at the same fetch time, and clears on the next update. Nothing
+in the rendering path can cause it — the crop, stretch and compositing all work
+on the assembled canvas, so a bug there would smear across seams rather than
+align to them. The contrast stretch makes it more obvious, because a small
+offset in the source gets spread across the full ramp.
+
+A failed tile is not a possible cause: the nine fetches are gathered without
+`return_exceptions`, so one failure aborts the whole render and the image proxy
+returns an error. There is no per-tile cache for the data layers and no
+fallback to an earlier tile — a mixed-vintage map would look plausible and be
+wrong, which is worse than no map. The same applies to a tile that arrives
+truncated.
+
+Each render checks its tile seams: a step much larger than the gradient beside
+it means the tiles disagree rather than the weather does. When that happens the
+map gets a red banner reading *tiles from different updates*, and a warning is
+logged. The map is still drawn — it is mostly right — but the banner is there so
+a seam is not read as a weather front.
+
+With debug logging on, each tile request also logs its `Last-Modified`, `Age`
+and `Date` headers, which is the evidence to attach if you want to report it to
+OpenWeather.
 
 ### Blank-looking maps
 

@@ -49,6 +49,26 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   (today and tomorrow, as local calendar days) and the poll interval (30 min)
   are fixed constants in
   `const.py`, deliberately not options. Do not turn them back into settings.
+- `POLLUTANT_BANDS` in `const.py` is OpenWeather's published table, not a
+  general air quality scale. Do not substitute EAQI, CAQI or EPA breakpoints:
+  they differ, and the index this integration reports is OpenWeather's.
+  Boundaries are `[lower, upper)`, so `band_for` uses `bisect_right`.
+- NH3 and NO use `BACKGROUND_BANDS`, not `POLLUTANT_BANDS`, and the vocabulary
+  `low/typical/elevated/high` rather than `good/fair/...`. This separation is
+  the point: there is no ambient health limit for either, and the only
+  published ammonia numbers are occupational limits some 87x above the maximum
+  this API can report. Do not merge the two vocabularies, and do not relabel
+  the background states as health states.
+- The NH3 boundaries come from RIVM/CLO measurements; the NO boundaries are
+  derived from the RIVM NOx-minus-NO2 difference and are the weaker of the two.
+  If better NO figures turn up, update the constant and the citation together.
+- Forecasts are bands, current readings are numbers. Do not add numeric
+  forecast sensors back: a microgram figure two days out is false precision,
+  and the peak value is already an attribute.
+- Icon translations set the glyph only. There is no colour field in
+  `icons.json`; do not add one or promise colour from the integration. The
+  health bands escalate through the glyph, the background bands deliberately
+  do not.
 - The air quality band sensors are `SensorDeviceClass.ENUM`. Their states are
   the untranslated keys, never the display names: changing them would break
   every template that reads them. Translation happens in `strings.json`.
@@ -69,6 +89,37 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - A field of wind arrows is not possible on this plan. Maps 2.0 `WND`/`WNDUV`
   with `arrow_step` renders them, but that is Developer tier; Maps 1.0
   `wind_new` is a speed raster with no direction in it.
+- The animation progress bar is drawn at assembly time, not at capture time: a
+  frame's position in the sequence changes as frames are added and pruned. It
+  fills by elapsed time between the first and last frame, so a capture gap is
+  visible as a jump. Do not switch it to frame index for smoothness; the
+  unevenness is the signal.
+- Anything written under `.storage/owm_startup_*` needs a matching branch in
+  `async_remove_entry`. Frames are per entry; the basemap cache is shared and
+  only goes with the last entry.
+- Capture runs after the coordinator update, not during it. Anything reporting
+  on the sequence must subscribe via `FrameStore.add_listener`, or it will be a
+  cycle behind.
+- One frame is served as a still, not withheld. An image entity that returns
+  None renders as broken, and "still filling" is not broken. Only zero frames
+  returns None.
+- `FrameStore.probe_hash` must only advance after a frame is stored. Setting it
+  when the probe is read loses the frame for good if the grid fetch then fails.
+- Frame capture compares decoded pixels, never file bytes: an upstream
+  re-encode of identical data would store a duplicate frame on every poll.
+- The probe fetches one tile before committing to nine. Do not "simplify" it
+  into always fetching the grid; the saving is roughly 3 refreshes in 4.
+- `async_capture_if_changed` runs unawaited off the coordinator update, so it
+  catches broadly on purpose. That is the one place in this codebase where a
+  bare `except Exception` is correct: the alternative is an unhandled task
+  error and a missing frame either way.
+- Weather map tiles are all-or-nothing on purpose: no per-tile cache, no
+  fallback to an earlier tile, no partial grid. A map assembled from tiles of
+  different ages looks plausible and is wrong. Two tests hold this in place.
+- Mismatched tiles across a seam are an upstream artefact, not a rendering bug.
+  `seam_mismatch` compares the step at a tile boundary against the gradient
+  beside it; tuning `SEAM_FLOOR` or `SEAM_RATIO` changes how readily the banner
+  appears, but do not "fix" the render in response to a report of it.
 - Draw translucent map furniture on its own layer and `alpha_composite` it.
   `ImageDraw` replaces pixels rather than blending, so a translucent halo drawn
   straight onto the canvas punches a hole in the map.

@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Qualitative band sensors for every pollutant OpenWeather publishes a scale
+  for: the index plus PM2.5, PM10, O₃, NO₂, SO₂ and CO, for the current reading
+  and for both forecast windows. Boundaries come from OpenWeather's published
+  table.
+- Progress bar on the animated maps, filling from the first frame to the last
+  along the seam between the map and the legend. It tracks elapsed time, so a
+  gap in capture shows as a jump.
+- Animated map images covering the last 12 hours, one per layer, as animated
+  WebP. Frames accumulate going forwards only, since Weather Maps 1.0 has no
+  time parameter. Capture is driven by a single probe tile, so an unchanged
+  refresh costs one call instead of nine, and any render requested by the
+  frontend is stored for free. A sequence holding a single frame is served as a
+  still rather than as nothing, so a filling sequence does not look like a
+  broken entity.
+- State-based icons on the health band sensors, escalating from an empty gauge
+  at Good to an alert at Very poor. Icon colour is not settable by an
+  integration; the README shows how to colour them on a dashboard.
+- Background band sensors for NH₃ and NO, which OpenWeather scores but does not
+  scale. These compare against Dutch ambient measurements rather than health
+  limits, and use a separate vocabulary (Low, Typical, Elevated, High) so they
+  cannot be read as an air quality verdict.
+
+- Tile seam detection on the weather maps. OpenWeather occasionally serves a
+  grid assembled from more than one model run, leaving a straight step along a
+  tile boundary; the map now carries a banner saying so instead of presenting
+  the step as weather, and logs a warning.
+- Per-tile `Last-Modified`, `Age` and `Date` headers are logged at debug level,
+  as evidence for which tiles in a mismatched grid are stale.
+
+### Removed
+
+- The numeric air quality forecast sensors. Forecasts are published as bands
+  only; the peak concentration behind each band remains as an attribute.
+- Registry cleanup for entities removed in earlier versions.
+
+- Removing a config entry now deletes its captured frames, and the basemap
+  cache once the last entry is gone. Frames are keyed by entry id, so a
+  remove-and-re-add previously left an unreachable directory of images behind.
+
+### Fixed
+
+- The animated map reported a frame count one refresh out of date. Capture is
+  scheduled from the coordinator update rather than run inside it, so the
+  attributes were published before the frame landed. The store now notifies the
+  entity, which republishes and drops its cached animation.
+- Hashing the tile grid decoded nine PNGs on the event loop.
+- A tile that arrived truncated raised out of Pillow inside the executor,
+  past the fetch error handling, and surfaced as a traceback. Undecodable tiles
+  now fail the render cleanly with a logged warning.
+
 ## [1.0.0] - 2026-08-23
 
 First stable release. Entity ids, attribute names and options changed from
