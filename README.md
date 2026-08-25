@@ -119,6 +119,9 @@ all_series_config:
   curve: stepline
   stroke_width: 2
   opacity: 0.35
+  # Without this the last known value is padded out to the end of the graph
+  # span, so today's line runs across tomorrow.
+  extend_to: false
   # Boundaries of OpenWeather's own index, so the colours mean what the
   # sensor means.
   color_threshold:
@@ -136,16 +139,37 @@ series:
   - entity: sensor.zoetermeer_air_quality_today
     name: Today
     data_generator: |
-      return (entity.attributes.forecast || []).map((point) => {
+      const points = (entity.attributes.forecast || []).map((point) => {
         return [new Date(point.datetime).getTime(), point.aqi];
       });
+      // Close the final step at the end of the window, otherwise the last
+      // hour is drawn with no width.
+      if (points.length && entity.attributes.window_end) {
+        points.push([
+          new Date(entity.attributes.window_end).getTime(),
+          points[points.length - 1][1],
+        ]);
+      }
+      return points;
   - entity: sensor.zoetermeer_air_quality_tomorrow
     name: Tomorrow
     data_generator: |
-      return (entity.attributes.forecast || []).map((point) => {
+      const points = (entity.attributes.forecast || []).map((point) => {
         return [new Date(point.datetime).getTime(), point.aqi];
       });
+      if (points.length && entity.attributes.window_end) {
+        points.push([
+          new Date(entity.attributes.window_end).getTime(),
+          points[points.length - 1][1],
+        ]);
+      }
+      return points;
 ```
+
+`extend_to: false` matters here. The default is `end`, which pads a series'
+last known value out to the end of the graph span — so today's line would run
+straight across tomorrow, on top of the tomorrow series. If your card predates
+apexcharts-card 2.0 the option is spelled `extend_to_end: false` instead.
 
 Two things to know about it. Today's series shortens as the day goes on — its
 window runs from now to local midnight — so the graph is fullest in the morning
