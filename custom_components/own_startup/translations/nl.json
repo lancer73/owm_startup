@@ -65,7 +65,13 @@
           }
         }
       },
-      "air_quality_level": {
+      "carbon_monoxide": {
+        "name": "Koolmonoxide"
+      },
+      "ammonia": {
+        "name": "Ammoniak"
+      },
+      "aqi_level": {
         "name": "Luchtkwaliteit",
         "state": {
           "good": "Goed",
@@ -75,10 +81,7 @@
           "very_poor": "Zeer slecht"
         }
       },
-      "air_quality_index_forecast_today": {
-        "name": "Luchtkwaliteitsindex voorspelling vandaag"
-      },
-      "air_quality_level_today": {
+      "aqi_level_today": {
         "name": "Luchtkwaliteit vandaag",
         "state": {
           "good": "Goed",
@@ -88,10 +91,7 @@
           "very_poor": "Zeer slecht"
         }
       },
-      "air_quality_index_forecast_tomorrow": {
-        "name": "Luchtkwaliteitsindex voorspelling morgen"
-      },
-      "air_quality_level_tomorrow": {
+      "aqi_level_tomorrow": {
         "name": "Luchtkwaliteit morgen",
         "state": {
           "good": "Goed",
@@ -101,67 +101,253 @@
           "very_poor": "Zeer slecht"
         }
       },
-      "carbon_monoxide": {
-        "name": "Koolmonoxide"
+      "pm2_5_level": {
+        "name": "PM2,5 niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "carbon_monoxide_forecast_today": {
-        "name": "Koolmonoxide voorspelling vandaag"
+      "pm2_5_level_today": {
+        "name": "PM2,5 niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "carbon_monoxide_forecast_tomorrow": {
-        "name": "Koolmonoxide voorspelling morgen"
+      "pm2_5_level_tomorrow": {
+        "name": "PM2,5 niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "ammonia": {
-        "name": "Ammoniak"
+      "pm10_level": {
+        "name": "PM10 niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "ammonia_forecast_today": {
-        "name": "Ammoniak voorspelling vandaag"
+      "pm10_level_today": {
+        "name": "PM10 niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "ammonia_forecast_tomorrow": {
-        "name": "Ammoniak voorspelling morgen"
+      "pm10_level_tomorrow": {
+        "name": "PM10 niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "pm2_5_forecast_today": {
-        "name": "PM2,5 voorspelling vandaag"
+      "o3_level": {
+        "name": "Ozon niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "pm2_5_forecast_tomorrow": {
-        "name": "PM2,5 voorspelling morgen"
+      "o3_level_today": {
+        "name": "Ozon niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "pm10_forecast_today": {
-        "name": "PM10 voorspelling vandaag"
+      "o3_level_tomorrow": {
+        "name": "Ozon niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "pm10_forecast_tomorrow": {
-        "name": "PM10 voorspelling morgen"
+      "no2_level": {
+        "name": "Stikstofdioxide niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "o3_forecast_today": {
-        "name": "Ozon voorspelling vandaag"
+      "no2_level_today": {
+        "name": "Stikstofdioxide niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "o3_forecast_tomorrow": {
-        "name": "Ozon voorspelling morgen"
+      "no2_level_tomorrow": {
+        "name": "Stikstofdioxide niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "no2_forecast_today": {
-        "name": "Stikstofdioxide voorspelling vandaag"
+      "so2_level": {
+        "name": "Zwaveldioxide niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "no2_forecast_tomorrow": {
-        "name": "Stikstofdioxide voorspelling morgen"
+      "so2_level_today": {
+        "name": "Zwaveldioxide niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "no_forecast_today": {
-        "name": "Stikstofmonoxide voorspelling vandaag"
+      "so2_level_tomorrow": {
+        "name": "Zwaveldioxide niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "no_forecast_tomorrow": {
-        "name": "Stikstofmonoxide voorspelling morgen"
+      "co_level": {
+        "name": "Koolmonoxide niveau",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "so2_forecast_today": {
-        "name": "Zwaveldioxide voorspelling vandaag"
+      "co_level_today": {
+        "name": "Koolmonoxide niveau vandaag",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
       },
-      "so2_forecast_tomorrow": {
-        "name": "Zwaveldioxide voorspelling morgen"
+      "co_level_tomorrow": {
+        "name": "Koolmonoxide niveau morgen",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "moderate": "Matig",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
+      },
+      "nh3_background_level": {
+        "name": "Ammoniak t.o.v. achtergrond",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
+      },
+      "nh3_background_level_today": {
+        "name": "Ammoniak t.o.v. achtergrond vandaag",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
+      },
+      "nh3_background_level_tomorrow": {
+        "name": "Ammoniak t.o.v. achtergrond morgen",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
+      },
+      "no_background_level": {
+        "name": "Stikstofmonoxide t.o.v. achtergrond",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
+      },
+      "no_background_level_today": {
+        "name": "Stikstofmonoxide t.o.v. achtergrond vandaag",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
+      },
+      "no_background_level_tomorrow": {
+        "name": "Stikstofmonoxide t.o.v. achtergrond morgen",
+        "state": {
+          "low": "Laag",
+          "typical": "Normaal",
+          "elevated": "Verhoogd",
+          "high": "Hoog"
+        }
       }
     },
     "image": {
       "temperature_map": {
         "name": "Temperatuurkaart"
       },
+      "temperature_map_animation": {
+        "name": "Temperatuurkaart, laatste 12 uur"
+      },
       "clouds_map": {
         "name": "Bewolkingskaart"
+      },
+      "clouds_map_animation": {
+        "name": "Bewolkingskaart, laatste 12 uur"
       }
     }
   }
