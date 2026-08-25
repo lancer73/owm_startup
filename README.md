@@ -80,6 +80,83 @@ Or with `card_mod` on a standard entities card, keyed on the same states. Either
 way the states are the stable untranslated keys, so the mapping survives a
 language change.
 
+### Charting the forecast
+
+The two AQI forecast sensors each carry their window's hourly timeline in a
+`forecast` attribute, as `{"datetime": ..., "aqi": ...}` pairs in local time.
+Together they cover from now to the end of tomorrow, so
+[apexcharts-card](https://github.com/RomRider/apexcharts-card) can draw both as
+one continuous graph:
+
+```yaml
+type: custom:apexcharts-card
+experimental:
+  color_threshold: true
+graph_span: 48h
+span:
+  start: day
+header:
+  show: true
+  title: Air quality forecast
+  show_states: true
+  colorize_states: true
+now:
+  show: true
+  label: Now
+yaxis:
+  - min: 1
+    max: 5
+    decimals: 0
+    apex_config:
+      tickAmount: 4
+      labels:
+        formatter: |
+          EVAL:function (value) {
+            return ["", "Good", "Fair", "Moderate", "Poor", "Very poor"][value] || "";
+          }
+all_series_config:
+  type: area
+  curve: stepline
+  stroke_width: 2
+  opacity: 0.35
+  # Boundaries of OpenWeather's own index, so the colours mean what the
+  # sensor means.
+  color_threshold:
+    - value: 1
+      color: "#4caf50"
+    - value: 2
+      color: "#8bc34a"
+    - value: 3
+      color: "#ff9800"
+    - value: 4
+      color: "#f44336"
+    - value: 5
+      color: "#9c27b0"
+series:
+  - entity: sensor.zoetermeer_air_quality_today
+    name: Today
+    data_generator: |
+      return (entity.attributes.forecast || []).map((point) => {
+        return [new Date(point.datetime).getTime(), point.aqi];
+      });
+  - entity: sensor.zoetermeer_air_quality_tomorrow
+    name: Tomorrow
+    data_generator: |
+      return (entity.attributes.forecast || []).map((point) => {
+        return [new Date(point.datetime).getTime(), point.aqi];
+      });
+```
+
+Two things to know about it. Today's series shortens as the day goes on — its
+window runs from now to local midnight — so the graph is fullest in the morning
+and is a single series by late evening. And the y-axis is the index, 1 to 5, not
+a concentration; the formatter puts OpenWeather's band names on the ticks so it
+reads the same way the sensors do.
+
+The same pattern works for any pollutant if you swap the entity, but only the
+AQI sensors carry the hourly `forecast` attribute — the others expose the peak
+and its time, not a timeline.
+
 **Forecasts are bands only.** A microgram figure two days out reads as a
 precision the model does not have, while "Moderate tomorrow" is something you
 can act on. The peak concentration behind each forecast band is still there as
