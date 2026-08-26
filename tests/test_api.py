@@ -81,3 +81,25 @@ def test_manifest_version_is_in_the_changelog() -> None:
 
     assert f"## [{version}] - " in changelog, version
     assert f"[{version}]: https://" in changelog, version
+
+
+async def test_html_body_reports_as_malformed_not_http_zero(
+    client, aioclient_mock
+) -> None:
+    """A 200 serving HTML must not be reported as "HTTP 0".
+
+    aiohttp raises ContentTypeError from json(), which is a ClientResponseError
+    subclass but carries status 0 because it was not raised by
+    raise_for_status().
+    """
+    aioclient_mock.get(
+        "https://api.openweathermap.org/data/2.5/weather",
+        status=200,
+        text="<html>maintenance</html>",
+        headers={"Content-Type": "text/html"},
+    )
+    with pytest.raises(OwmError) as err:
+        await client.async_get_current()
+
+    assert "Malformed response" in str(err.value)
+    assert "HTTP 0" not in str(err.value)

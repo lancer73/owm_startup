@@ -731,3 +731,73 @@ async def test_animation_rebuilds_when_a_frame_lands(
 
     assert animation._rendered is None
     assert await animation.async_image() != first
+
+
+async def test_concurrent_requests_fetch_the_grid_once(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A frontend request during a capture must not fetch a second grid."""
+    import asyncio
+
+    tile = _png((255, 0, 0, 128))
+
+    async def _slow(*args, **kwargs):
+        await asyncio.sleep(0.02)
+        return tile
+
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    mock_tiles.side_effect = _slow
+    mock_tiles.reset_mock()
+
+    results = await asyncio.gather(*(entity.async_image() for _ in range(3)))
+
+    assert mock_tiles.call_count == 9, "the grid was fetched more than once"
+    assert all(result == results[0] for result in results)
+
+
+async def test_overlapping_captures_are_skipped(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A capture slower than the refresh interval must not stack up.
+
+    Two captures in flight would each pull a grid, and on a slow API they
+    could overlap indefinitely.
+    """
+    import asyncio
+
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()  # prime the probe hash
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _hold(*args, **kwargs):
+        started.set()
+        await release.wait()
+        return _png((0, 255, 0, 200))
+
+    mock_tiles.side_effect = _hold
+    first = asyncio.create_task(entity.async_capture_if_changed())
+    await started.wait()
+
+    # Second capture arrives while the first is still waiting on the API.
+    await entity.async_capture_if_changed()
+    assert entity._capturing is True
+
+    release.set()
+    await first
+    assert entity._capturing is False
+
+
+async def test_capture_flag_clears_after_a_failure(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A failed capture must not wedge the entity into never capturing again."""
+    mock_tiles.side_effect = RuntimeError("boom")
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+
+    await entity.async_capture_if_changed()
+
+    assert entity._capturing is False

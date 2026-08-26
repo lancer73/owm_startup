@@ -301,3 +301,43 @@ async def test_write_failure_is_survivable(store: FrameStore) -> None:
 
     assert await store.async_add(_png((1, 2, 3, 255)), "frame") is True
     assert store.frames() == []
+
+
+def _frame_durations(data: bytes) -> list[int]:
+    """Read per-frame durations out of the WebP container.
+
+    Pillow writes them but does not expose them on read, so the ANMF chunks
+    have to be walked directly.
+    """
+    import struct
+
+    durations: list[int] = []
+    position = 12
+    while position + 8 <= len(data):
+        tag = data[position : position + 4]
+        size = struct.unpack("<I", data[position + 4 : position + 8])[0]
+        body = position + 8
+        if tag == b"ANMF":
+            durations.append(int.from_bytes(data[body + 12 : body + 15], "little"))
+        position = body + size + (size & 1)
+    return durations
+
+
+async def test_last_frame_is_held_longer(store: FrameStore, freezer) -> None:
+    """The newest frame is the current weather and is what people look at."""
+    from datetime import timedelta
+
+    from custom_components.owm_startup.const import (
+        ANIMATION_FRAME_MS,
+        ANIMATION_HOLD_FACTOR,
+    )
+
+    for index in range(4):
+        await store.async_add(_png((index * 50, 0, 0, 255)), f"frame-{index}")
+        freezer.tick(timedelta(minutes=30))
+
+    durations = _frame_durations(store.build_animation())
+
+    assert len(durations) == 4
+    assert durations[:3] == [ANIMATION_FRAME_MS] * 3
+    assert durations[-1] == ANIMATION_FRAME_MS * ANIMATION_HOLD_FACTOR

@@ -355,3 +355,65 @@ def test_background_bands_have_no_severity_ramp() -> None:
 
     for key in ("nh3_background_level", "no_background_level_today"):
         assert "state" not in icons[key], key
+
+
+async def test_forecast_attributes_match_the_documented_chart_example(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The README's apexcharts example reads these names directly.
+
+    A rename here would break that example silently, since nothing else in the
+    codebase consumes the timeline.
+    """
+    for day in ("today", "tomorrow"):
+        state = hass.states.get(f"sensor.zoetermeer_air_quality_{day}")
+        timeline = state.attributes["forecast"]
+
+        assert timeline, day
+        for point in timeline:
+            assert set(point) == {"datetime", "aqi"}
+            assert 1 <= point["aqi"] <= 5
+            # Local time with an offset, so new Date() in the browser is right.
+            parsed = dt_util.parse_datetime(point["datetime"])
+            assert parsed is not None
+            assert parsed.tzinfo is not None
+
+
+async def test_window_end_is_available_for_charting(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The chart example closes each step at the window boundary.
+
+    Without it the final hour of a stepline is drawn with no width, so the
+    attribute is part of the documented interface too.
+    """
+    for day in ("today", "tomorrow"):
+        state = hass.states.get(f"sensor.zoetermeer_air_quality_{day}")
+        window_end = dt_util.parse_datetime(state.attributes["window_end"])
+        last_point = dt_util.parse_datetime(
+            state.attributes["forecast"][-1]["datetime"]
+        )
+
+        assert window_end is not None
+        assert window_end.tzinfo is not None
+        # The boundary must sit after the last hourly point, or closing the
+        # step would draw backwards.
+        assert window_end > last_point
+
+
+async def test_numeric_index_is_recordable_for_the_chart_history(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The README chart plots the recorded past from the numeric index.
+
+    That only works while the sensor stays numeric with a measurement state
+    class; the band sensor beside it is an enum and has no history to plot.
+    """
+    numeric = hass.states.get("sensor.zoetermeer_air_quality_index")
+    assert numeric.state == "2"
+    assert numeric.attributes["state_class"] == "measurement"
+    assert "options" not in numeric.attributes
+
+    band = hass.states.get("sensor.zoetermeer_air_quality")
+    assert band.attributes["device_class"] == "enum"
+    assert "state_class" not in band.attributes
