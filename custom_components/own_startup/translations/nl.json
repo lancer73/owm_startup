@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "OpenWeatherMap (Startup-abonnement)",
-        "description": "Vereist een API-sleutel op een abonnement met het endpoint voor de daglijkse voorspelling van 16 dagen. Het gratis abonnement bevat dit niet.\n\nWeergegevens © OpenWeather, gelicentieerd onder de Open Database License (ODbL). Vermelding is verplicht overal waar deze gegevens worden getoond, en een afgeleide database die je verspreidt moet onder dezelfde licentie worden aangeboden.",
+        "description": "Vereist een API-sleutel op een abonnement met het endpoint voor de daglijkse voorspelling van 16 dagen. Het gratis abonnement bevat dit niet.\n\nWeergegevens © OpenWeather, gelicentieerd onder de Open Database License (ODbL). Vermelding is verplicht overal waar deze gegevens worden getoond, en een afgeleide database die je verspreidt moet onder dezelfde licentie worden aangeboden.\n\nHuidige omstandigheden, een daglijkse voorspelling tot 16 dagen, en een voorspelling binnen de dag. Die laatste wordt via de uurlijkse voorspelling van Home Assistant gepubliceerd, maar het Startup-abonnement levert stappen van 3 uur, dus de punten liggen drie uur uit elkaar in plaats van één.",
         "data": {
           "name": "Naam",
           "api_key": "API-sleutel",
