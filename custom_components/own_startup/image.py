@@ -159,6 +159,10 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         ImageEntity.__init__(self, coordinator.hass)
         self.entity_description = description
         self._store = store
+        # One render at a time per layer: the frontend and the background
+        # capture both call async_image, and each render is nine tile fetches.
+        self._render_lock = asyncio.Lock()
+        self._capturing = False
         self._entry = entry
         self._rendered: bytes | None = None
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -210,15 +214,34 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         self._rendered = None
         self._attr_image_last_updated = dt_util.utcnow()
         # Top up the animation in the background. Without this the sequence
-        # would only fill while somebody had the map on screen.
-        self.hass.async_create_task(self.async_capture_if_changed())
+        # would only fill while somebody had the map on screen. Registered
+        # against the config entry so it is cancelled on unload rather than
+        # left running against a torn-down entity.
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_capture_if_changed(),
+            name=f"{DOMAIN} capture {self.entity_description.layer}",
+        )
         super()._handle_coordinator_update()
 
     async def async_image(self) -> bytes | None:
-        """Return the composited map as PNG bytes."""
+        """Return the composited map as PNG bytes.
+
+        Guarded by a lock so a frontend request arriving while a background
+        capture is mid-flight waits for that render instead of fetching a
+        second grid of its own.
+        """
         if self._rendered is not None:
             return self._rendered
 
+        async with self._render_lock:
+            # Another caller may have rendered while this one waited.
+            if self._rendered is not None:
+                return self._rendered
+            return await self._async_render()
+
+    async def _async_render(self) -> bytes | None:
+        """Fetch the tiles and compose the map. Callers hold the render lock."""
         try:
             overlay = await self._async_fetch_grid(
                 lambda x, y: self.coordinator.client.async_get_map_tile(
@@ -293,6 +316,17 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         while nobody is looking at the map. A no-change refresh costs one tile
         instead of nine.
         """
+        if self._capturing:
+            # A capture is already running. Queueing another would repeat work
+            # that is about to complete, and on a slow API the two could
+            # overlap indefinitely.
+            _LOGGER.debug(
+                "Capture for %s already in progress; skipping",
+                self.entity_description.layer,
+            )
+            return
+
+        self._capturing = True
         x0, y0 = self._origin
         offset = MAP_GRID // 2
         try:
@@ -319,6 +353,8 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                 self.entity_description.layer,
                 redact(f"{type(err).__name__}: {err}"),
             )
+        finally:
+            self._capturing = False
 
     async def _async_fetch_grid(
         self, fetch: Callable[[int, int], Awaitable[bytes]]
@@ -723,6 +759,10 @@ class OwmMapAnimation(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         ImageEntity.__init__(self, coordinator.hass)
         self.entity_description = description
         self._store = store
+        # One render at a time per layer: the frontend and the background
+        # capture both call async_image, and each render is nine tile fetches.
+        self._render_lock = asyncio.Lock()
+        self._capturing = False
         self._rendered: bytes | None = None
         self._attr_unique_id = f"{entry.entry_id}_{description.key}_animation"
         self._attr_translation_key = f"{description.key}_animation"

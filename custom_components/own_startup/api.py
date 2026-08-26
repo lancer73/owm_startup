@@ -19,7 +19,7 @@ import logging
 from typing import Any
 
 import aiohttp
-from aiohttp import ClientResponseError, ClientSession
+from aiohttp import ClientResponseError, ClientSession, ContentTypeError
 
 from .redaction import redact, register_secret
 
@@ -132,6 +132,12 @@ class OwmApiClient:
             raise
         except TimeoutError:
             raise OwmConnectionError(f"Timeout calling {label}") from None
+        except ContentTypeError as err:
+            # A subclass of ClientResponseError, but raised by json() rather
+            # than by raise_for_status(), so it carries status 0. Caught first,
+            # or a 200 serving HTML would be reported as "HTTP 0".
+            self._log_cause(label, err)
+            raise OwmError(f"Malformed response from {label}") from None
         except ClientResponseError as err:
             self._log_cause(label, err)
             raise OwmError(f"HTTP {err.status} calling {label}") from None

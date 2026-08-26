@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "OpenWeatherMap (Startup plan)",
-        "description": "Requires an API key on a plan that includes the 16-day daily forecast endpoint. The free tier does not.\n\nWeather data © OpenWeather, licensed under the Open Database License (ODbL). You must display attribution wherever this data is shown, and any database you derive from it and distribute must be offered under the same licence.",
+        "description": "Requires an API key on a plan that includes the 16-day daily forecast endpoint. The free tier does not.\n\nWeather data © OpenWeather, licensed under the Open Database License (ODbL). You must display attribution wherever this data is shown, and any database you derive from it and distribute must be offered under the same licence.\n\nCurrent conditions, a daily forecast of up to 16 days, and a sub-daily forecast. The sub-daily one is published through Home Assistant's hourly forecast, but the Startup plan supplies 3-hour steps, so its points are three hours apart rather than one.",
         "data": {
           "name": "Name",
           "api_key": "API key",

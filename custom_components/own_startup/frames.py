@@ -39,6 +39,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ANIMATION_FRAME_MS,
+    ANIMATION_HOLD_FACTOR,
     ANIMATION_MIN_FRAMES,
     FRAME_WINDOW_HOURS,
     MAP_VIEW,
@@ -241,6 +242,12 @@ class FrameStore:
                 _draw_progress(image, elapsed / span if span > 0 else 1.0)
             images.append(image)
 
+        # Per-frame durations, so the newest frame is held. Pillow accepts a
+        # list here and writes it into each ANMF chunk, though it does not
+        # expose the values again on read.
+        durations = [ANIMATION_FRAME_MS] * len(images)
+        durations[-1] = ANIMATION_FRAME_MS * ANIMATION_HOLD_FACTOR
+
         buffer = io.BytesIO()
         first, rest = images[0], images[1:]
         first.save(
@@ -248,7 +255,7 @@ class FrameStore:
             format="WEBP",
             save_all=True,
             append_images=rest,
-            duration=ANIMATION_FRAME_MS,
+            duration=durations,
             loop=0,
             quality=85,
             method=4,

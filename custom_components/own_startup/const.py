@@ -127,6 +127,9 @@ SEAM_RATIO: Final = 3.0
 # has no time parameter, and historical tiles are a Maps 2.0 product.
 FRAME_WINDOW_HOURS: Final = 12
 ANIMATION_FRAME_MS: Final = 700
+# The last frame is the current weather, and is what the reader is usually
+# after. Holding it makes the loop legible instead of a blur that resets.
+ANIMATION_HOLD_FACTOR: Final = 3
 # One frame is served as a still. Returning nothing would leave the entity
 # broken on the dashboard for the couple of hours it takes upstream to change,
 # which looks like a fault rather than like a sequence still filling.
