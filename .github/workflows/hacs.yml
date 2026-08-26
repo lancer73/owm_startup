@@ -1,0 +1,29 @@
+name: HACS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+          # The brands check expects the domain in home-assistant/brands. This
+          # integration ships its own images in custom_components/owm_startup/
+          # brand/ instead, which HA 2026.3+ serves directly.
+          ignore: brands
