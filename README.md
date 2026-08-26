@@ -82,22 +82,24 @@ language change.
 
 ### Charting the forecast
 
-The two AQI forecast sensors each carry their window's hourly timeline in a
-`forecast` attribute, as `{"datetime": ..., "aqi": ...}` pairs in local time.
-Together they cover from now to the end of tomorrow, so
-[apexcharts-card](https://github.com/RomRider/apexcharts-card) can draw both as
-one continuous graph:
+Past and future come from different places. The **numeric** index sensor,
+`sensor.<name>_air_quality_index`, is recorded by Home Assistant like any other
+number, so apexcharts-card can pull its history. The two forecast band sensors
+each carry their window's hourly timeline in a `forecast` attribute, as
+`{"datetime": ..., "aqi": ...}` pairs in local time. Three series therefore
+cover yesterday, today and tomorrow as one line:
 
 ```yaml
 type: custom:apexcharts-card
 experimental:
   color_threshold: true
-graph_span: 48h
+graph_span: 72h
 span:
   start: day
+  offset: "-1d"
 header:
   show: true
-  title: Air quality forecast
+  title: Air quality
   show_states: true
   colorize_states: true
 now:
@@ -120,7 +122,7 @@ all_series_config:
   stroke_width: 2
   opacity: 0.35
   # Without this the last known value is padded out to the end of the graph
-  # span, so today's line runs across tomorrow.
+  # span, so each series runs across the ones after it.
   extend_to: false
   # Boundaries of OpenWeather's own index, so the colours mean what the
   # sensor means.
@@ -136,8 +138,16 @@ all_series_config:
     - value: 5
       color: "#9c27b0"
 series:
+  # Measured: recorder history of the numeric sensor, up to now.
+  - entity: sensor.zoetermeer_air_quality_index
+    name: Recorded
+    group_by:
+      func: max
+      duration: 1h
+  # Forecast: the two windows, from now to the end of tomorrow.
   - entity: sensor.zoetermeer_air_quality_today
     name: Today
+    stroke_width: 2
     data_generator: |
       const points = (entity.attributes.forecast || []).map((point) => {
         return [new Date(point.datetime).getTime(), point.aqi];
@@ -166,18 +176,28 @@ series:
       return points;
 ```
 
-`extend_to: false` matters here. The default is `end`, which pads a series'
-last known value out to the end of the graph span — so today's line would run
-straight across tomorrow, on top of the tomorrow series. If your card predates
-apexcharts-card 2.0 the option is spelled `extend_to_end: false` instead.
+Notes on it:
 
-Two things to know about it. Today's series shortens as the day goes on — its
-window runs from now to local midnight — so the graph is fullest in the morning
-and is a single series by late evening. And the y-axis is the index, 1 to 5, not
-a concentration; the formatter puts OpenWeather's band names on the ticks so it
-reads the same way the sensors do.
+- The history series must point at `..._air_quality_index`, the number. The band
+  sensor `..._air_quality` is an enum and has no numeric history to plot.
+- `group_by: max` over an hour matches the hourly resolution of the forecast
+  windows, so the recorded half does not look busier than the predicted half.
+  `max` rather than `mean` because the index is an ordinal 1-5: averaging Good
+  and Moderate into "Fair" would state something the scale does not mean.
+- How far back the recorded line reaches depends on your recorder retention. If
+  `purge_keep_days` is under two, yesterday will be short or empty.
+- `extend_to: false` matters. The default is `end`, which pads a series' last
+  known value out to the end of the graph span, so every series would run
+  across the ones after it. If your card predates apexcharts-card 2.0 the
+  option is spelled `extend_to_end: false` instead.
+- The y-axis is the index, 1 to 5, not a concentration; the formatter puts
+  OpenWeather's band names on the ticks so it reads the same way the sensors
+  do.
+- Today's forecast series shortens as the day goes on — its window runs from now
+  to local midnight — so the handover from recorded to forecast tracks the
+  current time on its own.
 
-The same pattern works for any pollutant if you swap the entity, but only the
+The same pattern works for any pollutant if you swap the entities, but only the
 AQI sensors carry the hourly `forecast` attribute — the others expose the peak
 and its time, not a timeline.
 
@@ -206,15 +226,22 @@ Attributes on every forecast sensor:
 The AQI forecast sensors additionally carry their hourly timeline in a
 `forecast` attribute, with local timestamps.
 
-The Startup plan has no true hourly product. `/data/2.5/forecast` returns
-3-hour steps, exposed through Home Assistant's `FORECAST_HOURLY` because that is
-the API for sub-daily forecasts — the entity advertises an hourly forecast, but
-the points in it are three hours apart. Cards and templates will show them at
-that spacing.
+**The hourly forecast is not hourly.** The Startup plan has no hourly product:
+`/data/2.5/forecast` returns 3-hour steps. Those are exposed through Home
+Assistant's `FORECAST_HOURLY`, because that is the API for sub-daily forecasts
+and dropping the feature would lose five days of forecast for the sake of a
+label. So the entity advertises an hourly forecast whose points are three hours
+apart, and cards, templates and `weather.get_forecasts` will all show that
+spacing. The setup dialog says so too, so it is not only buried here.
+
+The paid alternative is OpenWeather's 4-day hourly product, which is not part of
+the Startup plan.
 
 The polling interval is **30 minutes**, giving ten calls per hour, about 240 per
 day. OpenWeather's pricing table gives a 2-hour data update frequency for this
-plan, but polling is not aligned to their refresh: at a 60 minute interval the
+plan — though that figure describes the weather *data* products, and the map
+tiles have been observed changing about every three hours, which is consistent
+with a model that runs on 3-hourly steps. but polling is not aligned to their refresh: at a 60 minute interval the
 worst case was two hours of data age plus an hour of waiting for the next poll.
 Thirty minutes halves that second term. Their documentation asks that a location
 not be polled more often than every 10 minutes, so this sits comfortably inside
@@ -349,9 +376,8 @@ while nobody is watching, and this is kept cheap two ways:
 
 - **Probe first.** One tile — the centre one, containing your coordinates — is
   fetched and compared with the last. Only if it differs are the other eight
-  pulled. Since upstream refreshes every two hours while polling runs every
-  thirty minutes, roughly three refreshes in four cost a single tile instead of
-  nine.
+  pulled. Tiles change every two to three hours while polling runs every thirty
+  minutes, so four refreshes in five or more cost a single tile instead of nine.
 - **Opportunistic capture.** When the still map is rendered for the frontend all
   nine tiles are already in hand, so that frame is stored for free.
 
@@ -361,6 +387,9 @@ unchanged data would otherwise store a duplicate every time.
 The probe's limitation is real — a change confined to the edge of the view is
 missed until it reaches the centre tile, or until somebody opens the map. That
 is the price of one tile instead of nine.
+
+The newest frame is held roughly three times as long as the others, since that
+is the current weather and the frame people actually read.
 
 A progress bar runs along the seam between the map and the legend, filling from
 the first frame to the last. It tracks **elapsed time**, not frame number, so it

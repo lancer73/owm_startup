@@ -62,6 +62,9 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - The NH3 boundaries come from RIVM/CLO measurements; the NO boundaries are
   derived from the RIVM NOx-minus-NO2 difference and are the weaker of the two.
   If better NO figures turn up, update the constant and the citation together.
+- The `forecast` attribute on the AQI band sensors is a documented interface:
+  the README's chart example reads `datetime` and `aqi` from it by name. There
+  is a test holding that shape; renaming either key breaks the example.
 - Forecasts are bands, current readings are numbers. Do not add numeric
   forecast sensors back: a microgram figure two days out is false precision,
   and the peak value is already an attribute.
@@ -100,6 +103,10 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - Capture runs after the coordinator update, not during it. Anything reporting
   on the sequence must subscribe via `FrameStore.add_listener`, or it will be a
   cycle behind.
+- Per-frame WebP durations are written by passing a list to `save(duration=)`.
+  Pillow does not expose them again on read, so the test walks the ANMF chunks
+  in the container. Do not "fix" that test to use `Image.info`; the value is
+  not there.
 - One frame is served as a still, not withheld. An image entity that returns
   None renders as broken, and "still filling" is not broken. Only zero frames
   returns None.
@@ -113,6 +120,13 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   catches broadly on purpose. That is the one place in this codebase where a
   bare `except Exception` is correct: the alternative is an unhandled task
   error and a missing frame either way.
+- `async_image` holds `_render_lock` and re-checks the cache inside it. Both
+  the frontend and the background capture call it, and each render is nine tile
+  fetches; removing the double check reintroduces duplicate grids.
+- `async_capture_if_changed` skips when `_capturing` is set rather than
+  queueing. Two captures in flight each pull a grid.
+- Catch `ContentTypeError` before `ClientResponseError`. It is a subclass but
+  carries status 0, so the order matters for the message.
 - Weather map tiles are all-or-nothing on purpose: no per-tile cache, no
   fallback to an earlier tile, no partial grid. A map assembled from tiles of
   different ages looks plausible and is wrong. Two tests hold this in place.
