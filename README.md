@@ -241,11 +241,14 @@ The polling interval is **30 minutes**, giving ten calls per hour, about 240 per
 day. OpenWeather's pricing table gives a 2-hour data update frequency for this
 plan — though that figure describes the weather *data* products, and the map
 tiles have been observed changing about every three hours, which is consistent
-with a model that runs on 3-hourly steps. but polling is not aligned to their refresh: at a 60 minute interval the
-worst case was two hours of data age plus an hour of waiting for the next poll.
-Thirty minutes halves that second term. Their documentation asks that a location
-not be polled more often than every 10 minutes, so this sits comfortably inside
-both limits, and 240 calls a day is nothing against a 10M/month allowance.
+with a model that runs on 3-hourly steps.
+
+Polling is not aligned to that refresh, so the interval adds its own length to
+the worst case: at 60 minutes it was up to two hours of data age plus an hour of
+waiting for the next poll. Thirty minutes halves the second term. OpenWeather
+asks that a location not be polled more often than every 10 minutes, so this
+sits comfortably inside both limits, and 240 calls a day is nothing against a
+10M/month allowance.
 
 Weather map tiles are **not** part of that figure. They are fetched when the
 frontend requests an image, and the rendered result is cached until the next
