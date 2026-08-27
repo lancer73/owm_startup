@@ -50,11 +50,13 @@ from .const import (
     BASEMAP_MAX_AGE,
     CONF_BASEMAP_ATTRIBUTION,
     CONF_BASEMAP_URL,
-    CONF_CONTRAST_STRETCH,
+    CONF_CONTRAST_STRETCH_CLOUDS,
+    CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
     DEFAULT_BASEMAP_ATTRIBUTION,
     DEFAULT_BASEMAP_URL,
-    DEFAULT_CONTRAST_STRETCH,
+    DEFAULT_CONTRAST_STRETCH_CLOUDS,
+    DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
     DEFAULT_LANGUAGE,
     DEVICE_MODEL,
     DOMAIN,
@@ -65,6 +67,7 @@ from .const import (
     MAP_TILE_SIZE,
     MAP_VIEW,
     MAP_ZOOM,
+    MIXED_TILE_MAX_RETRIES,
     SEAM_FLOOR,
     SEAM_RATIO,
     USER_AGENT,
@@ -80,11 +83,24 @@ from .redaction import redact
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(slots=True)
+class Render:
+    """A composed map, and whether its tiles disagreed across a seam."""
+
+    image: bytes
+    mixed_tiles: bool
+
+
 @dataclass(frozen=True, kw_only=True)
 class OwmMapDescription(ImageEntityDescription):
     """Describes a weather map image."""
 
     layer: str
+    stretch_option: str
+    stretch_default: bool
+    # Widen the stretch to cover the day's forecast range as well as what is
+    # in view, so consecutive frames share a scale and can be compared.
+    daily_range: bool = False
 
 
 MAP_TYPES: tuple[OwmMapDescription, ...] = (
@@ -92,11 +108,16 @@ MAP_TYPES: tuple[OwmMapDescription, ...] = (
         key="temperature_map",
         layer="temp_new",
         translation_key="temperature_map",
+        stretch_option=CONF_CONTRAST_STRETCH_TEMPERATURE,
+        stretch_default=DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
+        daily_range=True,
     ),
     OwmMapDescription(
         key="clouds_map",
         layer="clouds_new",
         translation_key="clouds_map",
+        stretch_option=CONF_CONTRAST_STRETCH_CLOUDS,
+        stretch_default=DEFAULT_CONTRAST_STRETCH_CLOUDS,
     ),
 )
 
@@ -163,6 +184,10 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         # capture both call async_image, and each render is nine tile fetches.
         self._render_lock = asyncio.Lock()
         self._capturing = False
+        self._retries = 0
+        # Set when a grid came back mixed, so the next scheduled refresh
+        # re-renders it instead of trusting an unchanged probe tile.
+        self._force_next = False
         self._entry = entry
         self._rendered: bytes | None = None
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -194,9 +219,32 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
     def _basemap_url(self) -> str:
         return self._entry.options.get(CONF_BASEMAP_URL, DEFAULT_BASEMAP_URL)
 
+    def _reference_bounds(self) -> tuple[float, float] | None:
+        """Return today's forecast low and high, in the layer's own units.
+
+        Fitting each frame to its own observed range makes the colours mean
+        something different from one frame to the next, which is exactly what
+        an animation should not do. Anchoring to the day's forecast range gives
+        a scale that only moves when the forecast does.
+        """
+        if not self.entity_description.daily_range:
+            return None
+        daily = self.coordinator.data.daily
+        if not daily:
+            return None
+        temperatures = daily[0].get("temp") or {}
+        low, high = temperatures.get("min"), temperatures.get("max")
+        if low is None or high is None:
+            return None
+        return float(low), float(high)
+
     @property
     def _contrast_stretch(self) -> bool:
-        return self._entry.options.get(CONF_CONTRAST_STRETCH, DEFAULT_CONTRAST_STRETCH)
+        """Return whether this layer is stretched, per its own option."""
+        return self._entry.options.get(
+            self.entity_description.stretch_option,
+            self.entity_description.stretch_default,
+        )
 
     @property
     def _basemap_attribution(self) -> str:
@@ -217,9 +265,11 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         # would only fill while somebody had the map on screen. Registered
         # against the config entry so it is cancelled on unload rather than
         # left running against a torn-down entity.
+        force = self._force_next
+        self._force_next = False
         self.coordinator.config_entry.async_create_background_task(
             self.hass,
-            self.async_capture_if_changed(),
+            self.async_capture_if_changed(force=force),
             name=f"{DOMAIN} capture {self.entity_description.layer}",
         )
         super()._handle_coordinator_update()
@@ -270,7 +320,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                 wind = (speed, bearing)
 
         try:
-            self._rendered = await self.hass.async_add_executor_job(
+            render = await self.hass.async_add_executor_job(
                 self._compose,
                 basemap,
                 overlay,
@@ -281,7 +331,35 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                 self._language,
                 fetched_at,
                 wind,
+                self._reference_bounds(),
             )
+            self._rendered = render.image
+
+            if render.mixed_tiles and self._retries < MIXED_TILE_MAX_RETRIES:
+                # Show it -- it is mostly right -- but do not commit it to the
+                # sequence, where it would flicker for twelve hours. The hashes
+                # are left untouched so the retry re-renders from scratch.
+                self._retries += 1
+                _LOGGER.debug(
+                    "The %s grid mixes model runs; not capturing it, and "
+                    "forcing a re-render on the next refresh (attempt %d of %d)",
+                    self.entity_description.layer,
+                    self._retries,
+                    MIXED_TILE_MAX_RETRIES,
+                )
+                self._force_next = True
+                return self._rendered
+
+            if render.mixed_tiles:
+                _LOGGER.warning(
+                    "The %s grid is still mixed after %d retries; storing it "
+                    "anyway rather than starving the sequence",
+                    self.entity_description.layer,
+                    self._retries,
+                )
+            self._retries = 0
+            self._force_next = False
+
             # Hashing decodes nine PNGs; that does not belong on the event loop.
             frame_hash = await self.hass.async_add_executor_job(grid_hash, overlay)
             await self._store.async_add(self._rendered, frame_hash)
@@ -309,7 +387,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         await super().async_added_to_hass()
         await self._store.async_load()
 
-    async def async_capture_if_changed(self) -> None:
+    async def async_capture_if_changed(self, force: bool = False) -> None:
         """Fetch one tile, and the rest only if the weather moved.
 
         Called on the coordinator's schedule so the sequence keeps filling
@@ -330,12 +408,19 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         x0, y0 = self._origin
         offset = MAP_GRID // 2
         try:
-            probe = await self.coordinator.client.async_get_map_tile(
-                self.entity_description.layer, MAP_ZOOM, x0 + offset, y0 + offset
-            )
-            probe_hash = await self.hass.async_add_executor_job(image_hash, probe)
-            if probe_hash == self._store.probe_hash:
-                return
+            if not force:
+                # A retry skips the probe: the mismatch may have been in a tile
+                # the probe does not cover, so an unchanged probe proves
+                # nothing about the rest of the grid.
+                probe = await self.coordinator.client.async_get_map_tile(
+                    self.entity_description.layer,
+                    MAP_ZOOM,
+                    x0 + offset,
+                    y0 + offset,
+                )
+                probe_hash = await self.hass.async_add_executor_job(image_hash, probe)
+                if probe_hash == self._store.probe_hash:
+                    return
 
             # Something moved: render in full; async_image stores the frame and
             # advances the probe hash. The hash is deliberately not set here:
@@ -520,7 +605,8 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         language: str,
         fetched_at: str | None = None,
         wind: tuple[float, float] | None = None,
-    ) -> bytes:
+        reference: tuple[float, float] | None = None,
+    ) -> Render:
         """Stitch the grid, crop to the view and burn in the attribution.
 
         Runs in an executor: Pillow is blocking.
@@ -570,6 +656,16 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             )
 
         bounds = legend_module.observed_range(overlay_view, layer)
+        # Union with the day's forecast range, so the scale holds still between
+        # frames while never clipping something that is actually in view.
+        day_scaled = False
+        if reference is not None:
+            bounds = (
+                (min(bounds[0], reference[0]), max(bounds[1], reference[1]))
+                if bounds is not None
+                else reference
+            )
+            day_scaled = True
         stretched = contrast_stretch and bounds is not None
         if stretched:
             overlay_view = legend_module.stretch(overlay_view, layer, bounds)
@@ -601,11 +697,12 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             stretched=stretched,
             language=language,
             fetched_at=fetched_at,
+            day_scaled=day_scaled,
         )
 
         buffer = io.BytesIO()
         canvas.save(buffer, format="PNG", optimize=True)
-        return buffer.getvalue()
+        return Render(buffer.getvalue(), mixed_tiles)
 
 
 def seam_mismatch(overlay, seams: list[tuple[str, int]]) -> bool:
@@ -763,6 +860,10 @@ class OwmMapAnimation(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         # capture both call async_image, and each render is nine tile fetches.
         self._render_lock = asyncio.Lock()
         self._capturing = False
+        self._retries = 0
+        # Set when a grid came back mixed, so the next scheduled refresh
+        # re-renders it instead of trusting an unchanged probe tile.
+        self._force_next = False
         self._rendered: bytes | None = None
         self._attr_unique_id = f"{entry.entry_id}_{description.key}_animation"
         self._attr_translation_key = f"{description.key}_animation"

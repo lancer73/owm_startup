@@ -46,6 +46,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "range in view, contrast stretched",
         "empty": "no data in view, full scale",
         "fetched": "fetched",
+        "day": "today's range, contrast stretched",
         "mixed": "tiles from different updates",
     },
     "nl": {
@@ -55,6 +56,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "bereik in beeld, contrast opgerekt",
         "empty": "geen data in beeld, volledige schaal",
         "fetched": "opgehaald",
+        "day": "bereik van vandaag, contrast opgerekt",
         "mixed": "tegels uit verschillende updates",
     },
     "de": {
@@ -64,6 +66,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "Bereich im Bild, Kontrast gespreizt",
         "empty": "keine Daten im Bild, volle Skala",
         "fetched": "abgerufen",
+        "day": "Bereich von heute, Kontrast gespreizt",
         "mixed": "Kacheln aus verschiedenen Aktualisierungen",
     },
     "fr": {
@@ -73,6 +76,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stretched": "plage visible, contraste étiré",
         "empty": "aucune donnée visible, échelle complète",
         "fetched": "récupéré",
+        "day": "plage du jour, contraste étiré",
         "mixed": "tuiles de mises à jour différentes",
     },
 }
@@ -291,6 +295,7 @@ def draw(
     stretched: bool,
     language: str = "en",
     fetched_at: str | None = None,
+    day_scaled: bool = False,
 ) -> None:
     """Draw the legend strip below the map. Runs in an executor.
 
@@ -324,7 +329,10 @@ def draw(
             note = translate(language, "empty")
         else:
             low, high = pad_range(bounds)
-            note = translate(language, "stretched" if ramp else "range")
+            if ramp and day_scaled:
+                note = translate(language, "day")
+            else:
+                note = translate(language, "stretched" if ramp else "range")
 
         name = translate(language, layer)
         title = f"{name} ({legend['unit']}) - {note}"

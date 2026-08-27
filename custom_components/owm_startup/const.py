@@ -41,8 +41,15 @@ LEGEND_HEIGHT: Final = 66
 LEGEND_TRIM: Final = 0.02
 LEGEND_TICKS: Final = 6
 
-CONF_CONTRAST_STRETCH: Final = "contrast_stretch"
-DEFAULT_CONTRAST_STRETCH: Final = True
+# Per layer, because the stretch earns its keep on temperature and not on
+# cloud. Temperature spans a couple of degrees across the view and is almost
+# one colour without it; cloud already runs the full 0-100% of its palette, so
+# stretching mostly amplifies noise, which is worse in an animation where it
+# flickers between frames.
+CONF_CONTRAST_STRETCH_TEMPERATURE: Final = "contrast_stretch_temperature"
+CONF_CONTRAST_STRETCH_CLOUDS: Final = "contrast_stretch_clouds"
+DEFAULT_CONTRAST_STRETCH_TEMPERATURE: Final = True
+DEFAULT_CONTRAST_STRETCH_CLOUDS: Final = False
 
 # Ramps used when the contrast stretch is on. OpenWeather's own palettes barely
 # move over the few degrees or millimetres a 200 km view actually spans, so the
@@ -122,6 +129,13 @@ USER_AGENT: Final = "owm_startup (+https://github.com/lancer73/owm_startup)"
 # tiles disagreeing rather than the weather changing.
 SEAM_FLOOR: Final = 8.0
 SEAM_RATIO: Final = 3.0
+# When a grid comes back mixed the frame is not committed; the next scheduled
+# refresh re-renders it, skipping the probe. Retrying sooner is not worth it:
+# if OpenWeather's CDN is serving the stale tiles from cache rather than
+# regenerating them, a few minutes returns the same bytes. Bounded, because a
+# sharp front sitting on a tile boundary looks the same to the detector and
+# would otherwise starve the sequence forever.
+MIXED_TILE_MAX_RETRIES: Final = 2
 
 # Animated map sequence. Frames can only be collected going forward: Maps 1.0
 # has no time parameter, and historical tiles are a Maps 2.0 product.

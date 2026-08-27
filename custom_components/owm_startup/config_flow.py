@@ -34,11 +34,13 @@ from .api import OwmApiClient, OwmAuthError, OwmError, OwmRateLimitError
 from .const import (
     CONF_BASEMAP_ATTRIBUTION,
     CONF_BASEMAP_URL,
-    CONF_CONTRAST_STRETCH,
+    CONF_CONTRAST_STRETCH_CLOUDS,
+    CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
     DEFAULT_BASEMAP_ATTRIBUTION,
     DEFAULT_BASEMAP_URL,
-    DEFAULT_CONTRAST_STRETCH,
+    DEFAULT_CONTRAST_STRETCH_CLOUDS,
+    DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
     DEFAULT_LANGUAGE,
     DEFAULT_NAME,
     DOMAIN,
@@ -175,7 +177,8 @@ async def _async_validate(
 class OwmStartupOptionsFlow(OptionsFlow):
     """Handle the options flow.
 
-    Language, plus the basemap used behind the weather maps. Forecast length,
+    Language, the basemap used behind the weather maps, and the contrast
+    stretch per layer. Forecast length,
     air quality windows, map zoom and the poll interval are fixed: each is
     already at the value the Startup plan makes sensible.
     """
@@ -196,7 +199,12 @@ class OwmStartupOptionsFlow(OptionsFlow):
                     CONF_BASEMAP_ATTRIBUTION: user_input[
                         CONF_BASEMAP_ATTRIBUTION
                     ].strip(),
-                    CONF_CONTRAST_STRETCH: user_input[CONF_CONTRAST_STRETCH],
+                    CONF_CONTRAST_STRETCH_TEMPERATURE: user_input[
+                        CONF_CONTRAST_STRETCH_TEMPERATURE
+                    ],
+                    CONF_CONTRAST_STRETCH_CLOUDS: user_input[
+                        CONF_CONTRAST_STRETCH_CLOUDS
+                    ],
                 }
             )
 
@@ -227,9 +235,17 @@ class OwmStartupOptionsFlow(OptionsFlow):
                         ),
                     ): TextSelector(),
                     vol.Required(
-                        CONF_CONTRAST_STRETCH,
+                        CONF_CONTRAST_STRETCH_TEMPERATURE,
                         default=options.get(
-                            CONF_CONTRAST_STRETCH, DEFAULT_CONTRAST_STRETCH
+                            CONF_CONTRAST_STRETCH_TEMPERATURE,
+                            DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
+                        ),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_CONTRAST_STRETCH_CLOUDS,
+                        default=options.get(
+                            CONF_CONTRAST_STRETCH_CLOUDS,
+                            DEFAULT_CONTRAST_STRETCH_CLOUDS,
                         ),
                     ): BooleanSelector(),
                 }
