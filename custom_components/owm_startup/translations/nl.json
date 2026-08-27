@@ -37,13 +37,15 @@
           "language": "Taal",
           "basemap_url": "Basiskaart tile-URL",
           "basemap_attribution": "Bronvermelding basiskaart",
-          "contrast_stretch": "Kaartcontrast oprekken"
+          "contrast_stretch_temperature": "Contrast temperatuurkaart oprekken",
+          "contrast_stretch_clouds": "Contrast bewolkingskaart oprekken"
         },
         "description": "Weergegevens © OpenWeather, gelicentieerd onder ODbL.\n\nVoorspellingslengte, luchtkwaliteitsvensters en het verversinterval liggen vast op de waarden die het Startup-abonnement ondersteunt: 16-daagse voorspelling, 3-uurlijkse voorspelling van 120 uur, luchtkwaliteitspieken voor vandaag en morgen, en updates elke 30 minuten.",
         "data_description": {
           "basemap_url": "Tile-sjabloon met {z}, {x} en {y} als plaatshouders, getekend achter de weerkaarten. Standaard de CARTO-stijl die Home Assistant zelf gebruikt. Laat leeg voor geen basiskaart. Richt dit niet op tile.openstreetmap.org: hun gebruiksvoorwaarden verbieden dat.",
           "basemap_attribution": "Wordt in de hoek van elke kaartafbeelding gezet. Pas dit aan als je de basiskaart-URL wijzigt.",
-          "contrast_stretch": "De paletten van OpenWeather bestrijken de hele wereld, dus over een beeld van 200 km veranderen de kleuren nauwelijks. Hiermee worden de waarden in beeld over een volledig kleurverloop verdeeld en volgt de legenda. Zet uit voor de eigen kleuren van OpenWeather."
+          "contrast_stretch_temperature": "Het temperatuurpalet van OpenWeather bestrijkt de hele wereld, dus een beeld van 200 km met een paar graden verschil is bijna één kleur. Hiermee worden de waarden in beeld over een volledig kleurverloop verdeeld en volgt de legenda.",
+          "contrast_stretch_clouds": "Bewolking gebruikt al de volledige 0-100% van het palet, dus oprekken versterkt vooral ruis, die in de animatie tussen frames flikkert. Staat standaard uit; zet aan om dunne bewolking te zien."
         }
       }
     }
