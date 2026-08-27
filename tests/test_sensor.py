@@ -417,3 +417,35 @@ async def test_numeric_index_is_recordable_for_the_chart_history(
     band = hass.states.get("sensor.zoetermeer_air_quality")
     assert band.attributes["device_class"] == "enum"
     assert "state_class" not in band.attributes
+
+
+async def test_pollutant_band_attributes_match_the_documented_chart_example(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The second README chart plots one point per window from these names.
+
+    A pollutant band has no hourly timeline, so the peak and its time are the
+    whole of what can be charted; renaming either would break the example
+    silently.
+    """
+    for day in ("today", "tomorrow"):
+        state = hass.states.get(f"sensor.zoetermeer_pm2_5_level_{day}")
+
+        assert "forecast" not in state.attributes, "pollutants carry no timeline"
+        assert isinstance(state.attributes["value"], (int, float))
+        peak_at = dt_util.parse_datetime(state.attributes["peak_at"])
+        assert peak_at is not None
+        assert peak_at.tzinfo is not None
+
+
+async def test_pollutant_annotations_match_the_band_table(
+    hass: HomeAssistant, setup_integration
+) -> None:
+    """The chart's annotation lines are OpenWeather's PM2.5 boundaries.
+
+    The README hard-codes them, so a change to the table must fail here rather
+    than leave the chart quietly disagreeing with the sensors beside it.
+    """
+    from custom_components.owm_startup.const import POLLUTANT_BANDS
+
+    assert POLLUTANT_BANDS["pm2_5"] == (10, 25, 50, 75)

@@ -8,7 +8,8 @@ from custom_components.owm_startup.api import OwmAuthError, OwmConnectionError
 from custom_components.owm_startup.const import (
     CONF_BASEMAP_ATTRIBUTION,
     CONF_BASEMAP_URL,
-    CONF_CONTRAST_STRETCH,
+    CONF_CONTRAST_STRETCH_CLOUDS,
+    CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
     DEFAULT_BASEMAP_ATTRIBUTION,
     DEFAULT_BASEMAP_URL,
@@ -95,7 +96,8 @@ async def test_options_flow(hass: HomeAssistant, setup_integration) -> None:
         CONF_LANGUAGE,
         CONF_BASEMAP_URL,
         CONF_BASEMAP_ATTRIBUTION,
-        CONF_CONTRAST_STRETCH,
+        CONF_CONTRAST_STRETCH_CLOUDS,
+        CONF_CONTRAST_STRETCH_TEMPERATURE,
     }
 
     result = await hass.config_entries.options.async_configure(
@@ -104,7 +106,8 @@ async def test_options_flow(hass: HomeAssistant, setup_integration) -> None:
             CONF_LANGUAGE: "nl",
             CONF_BASEMAP_URL: DEFAULT_BASEMAP_URL,
             CONF_BASEMAP_ATTRIBUTION: DEFAULT_BASEMAP_ATTRIBUTION,
-            CONF_CONTRAST_STRETCH: True,
+            CONF_CONTRAST_STRETCH_TEMPERATURE: True,
+            CONF_CONTRAST_STRETCH_CLOUDS: False,
         },
     )
     await hass.async_block_till_done()

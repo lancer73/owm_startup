@@ -213,7 +213,7 @@ def test_legend_is_drawn_below_the_map(hass: HomeAssistant) -> None:
     tiles = {(dx, dy): _png((10, 200, 10, 255)) for dx in range(3) for dy in range(3)}
     rendered = OwmMapImage._compose(
         tiles, tiles, (384.0, 384.0), "attr", "temp_new", False, "en"
-    )
+    ).image
     image = Image.open(io.BytesIO(rendered)).convert("RGBA")
 
     assert image.size == (MAP_VIEW, MAP_VIEW + LEGEND_HEIGHT)
@@ -247,10 +247,10 @@ def test_contrast_stretch_changes_the_render(hass: HomeAssistant) -> None:
     tiles = {(dx, dy): gradient(dx) for dx in range(3) for dy in range(3)}
     plain = OwmMapImage._compose(
         None, tiles, (384.0, 384.0), "attr", "temp_new", False, "en"
-    )
+    ).image
     boosted = OwmMapImage._compose(
         None, tiles, (384.0, 384.0), "attr", "temp_new", True, "en"
-    )
+    ).image
 
     assert plain != boosted
 
@@ -413,7 +413,7 @@ def _wind_render(wind, layer="clouds_new"):
     tiles = {(dx, dy): _png((40, 40, 40, 255)) for dx in range(3) for dy in range(3)}
     return OwmMapImage._compose(
         tiles, tiles, (384.0, 384.0), "attr", layer, False, "en", None, wind
-    )
+    ).image
 
 
 def test_wind_arrow_points_downwind(hass: HomeAssistant) -> None:
@@ -529,11 +529,11 @@ def test_mixed_tiles_are_labelled_on_the_image(hass: HomeAssistant) -> None:
     }
     rendered = OwmMapImage._compose(
         None, tiles, (384.0, 384.0), "attr", "temp_new", False, "en", None, None
-    )
+    ).image
     clean = {(dx, dy): _tile_with_offset(120) for dx in range(3) for dy in range(3)}
     baseline = OwmMapImage._compose(
         None, clean, (384.0, 384.0), "attr", "temp_new", False, "en", None, None
-    )
+    ).image
 
     assert rendered != baseline
     assert (
@@ -801,3 +801,303 @@ async def test_capture_flag_clears_after_a_failure(
     await entity.async_capture_if_changed()
 
     assert entity._capturing is False
+
+
+async def test_each_layer_has_its_own_stretch_option(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """Temperature and cloud are stretched independently."""
+    from custom_components.owm_startup.const import (
+        CONF_CONTRAST_STRETCH_CLOUDS,
+        CONF_CONTRAST_STRETCH_TEMPERATURE,
+    )
+
+    temperature = hass.data["image"].get_entity(TEMPERATURE)
+    clouds = hass.data["image"].get_entity(CLOUDS)
+
+    # Defaults: on for temperature, off for cloud.
+    assert temperature._contrast_stretch is True
+    assert clouds._contrast_stretch is False
+
+    hass.config_entries.async_update_entry(
+        setup_integration,
+        options={
+            CONF_CONTRAST_STRETCH_TEMPERATURE: False,
+            CONF_CONTRAST_STRETCH_CLOUDS: True,
+        },
+    )
+    await hass.async_block_till_done()
+
+    temperature = hass.data["image"].get_entity(TEMPERATURE)
+    clouds = hass.data["image"].get_entity(CLOUDS)
+    assert temperature._contrast_stretch is False
+    assert clouds._contrast_stretch is True
+
+
+def test_stretch_defaults_differ_by_layer() -> None:
+    """The cloud default is deliberately off.
+
+    Cloud cover already uses the full range of its palette, so stretching it
+    amplifies noise, which flickers between animation frames.
+    """
+    from custom_components.owm_startup.image import MAP_TYPES
+
+    defaults = {
+        description.layer: description.stretch_default for description in MAP_TYPES
+    }
+    assert defaults == {"temp_new": True, "clouds_new": False}
+
+    options = {description.stretch_option for description in MAP_TYPES}
+    assert len(options) == len(MAP_TYPES), "layers must not share an option key"
+
+
+async def test_temperature_scale_is_anchored_to_the_days_forecast(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The scale comes from today's forecast low and high."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    daily = setup_integration.runtime_data.data.daily[0]["temp"]
+
+    assert entity._reference_bounds() == (daily["min"], daily["max"])
+
+
+async def test_cloud_map_has_no_daily_anchor(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A percentage has no daily forecast range to borrow."""
+    assert hass.data["image"].get_entity(CLOUDS)._reference_bounds() is None
+
+
+async def test_reference_survives_a_forecast_without_temperatures(
+    hass: HomeAssistant, setup_integration, mock_api, mock_tiles
+) -> None:
+    """A malformed daily entry falls back to the observed range."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    coordinator = setup_integration.runtime_data
+
+    coordinator.data.daily[0]["temp"] = {}
+    assert entity._reference_bounds() is None
+
+    coordinator.data.daily.clear()
+    assert entity._reference_bounds() is None
+
+
+def test_scale_holds_still_between_frames(hass: HomeAssistant) -> None:
+    """Two frames with different content must share a scale.
+
+    Without the anchor each frame is fitted to its own range, so identical
+    temperatures are drawn in different colours from one frame to the next --
+    the flicker that makes an animation unreadable.
+    """
+    import io
+
+    from PIL import Image
+
+    from custom_components.owm_startup.const import LEGENDS
+    from custom_components.owm_startup.image import OwmMapImage
+    from custom_components.owm_startup.legend import colour_at
+
+    stops = LEGENDS["temp_new"]["stops"]
+
+    def grid(value: float) -> dict:
+        buffer = io.BytesIO()
+        Image.new("RGBA", (256, 256), colour_at(stops, value)).save(
+            buffer, format="PNG"
+        )
+        tile = buffer.getvalue()
+        return {(x, y): tile for x in range(3) for y in range(3)}
+
+    def render(value: float, reference):
+        data = OwmMapImage._compose(
+            None,
+            grid(value),
+            (384.0, 384.0),
+            "attr",
+            "temp_new",
+            True,
+            "en",
+            None,
+            None,
+            reference,
+        ).image
+        return Image.open(io.BytesIO(data)).convert("RGB").getpixel((100, 100))
+
+    day = (12.0, 24.0)
+    warm_anchored = render(20.0, day)
+    cool_anchored = render(14.0, day)
+
+    # Anchored: different temperatures, different colours.
+    assert warm_anchored != cool_anchored
+
+    # Unanchored: a uniform field is fitted to itself, so both come out the
+    # same colour despite being six degrees apart.
+    assert render(20.0, None) == render(14.0, None)
+
+
+def _mixed_grid() -> dict:
+    """Return a grid whose top row came from a different model run."""
+    return {
+        (dx, dy): _png((90, 90, 90, 255) if dy == 0 else (170, 170, 170, 255))
+        for dx in range(3)
+        for dy in range(3)
+    }
+
+
+async def test_mixed_grid_is_shown_but_not_captured(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A mismatched map still renders; it just does not enter the sequence.
+
+    Withholding the image would put a broken picture on the dashboard, while
+    storing the frame would make it flicker for twelve hours.
+    """
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    frames_before = len(entity._store.frames())
+
+    tiles = _mixed_grid()
+    mock_tiles.side_effect = lambda layer, z, x, y: tiles[
+        (x - entity._origin[0], y - entity._origin[1])
+    ]
+
+    image = await entity.async_image()
+
+    assert image is not None and image.startswith(b"\x89PNG")
+    assert len(entity._store.frames()) == frames_before
+    assert entity._retries == 1
+    assert entity._force_next is True
+
+
+async def test_mixed_grid_leaves_the_hashes_alone(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The retry must re-render, so nothing may look already captured."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    before = entity._store.probe_hash
+
+    tiles = _mixed_grid()
+    mock_tiles.side_effect = lambda layer, z, x, y: tiles[
+        (x - entity._origin[0], y - entity._origin[1])
+    ]
+    entity._rendered = None
+    await entity.async_image()
+
+    assert entity._store.probe_hash == before
+
+
+async def test_mixed_grid_is_stored_once_retries_are_spent(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A front sitting on a tile boundary looks the same to the detector.
+
+    After the bounded retries the frame is accepted, or a persistent
+    false positive would starve the sequence entirely.
+    """
+    from custom_components.owm_startup.const import MIXED_TILE_MAX_RETRIES
+
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    frames_before = len(entity._store.frames())
+
+    tiles = _mixed_grid()
+    mock_tiles.side_effect = lambda layer, z, x, y: tiles[
+        (x - entity._origin[0], y - entity._origin[1])
+    ]
+
+    entity._retries = MIXED_TILE_MAX_RETRIES
+    entity._rendered = None
+    await entity.async_image()
+
+    assert len(entity._store.frames()) == frames_before + 1
+    assert entity._retries == 0
+
+
+async def test_forced_capture_skips_the_probe(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A retry cannot trust the probe: the mismatch may be elsewhere."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()  # primes the probe hash
+
+    mock_tiles.reset_mock()
+    await entity.async_capture_if_changed(force=True)
+
+    # Nine tiles for the grid, and no tenth call for the probe.
+    assert mock_tiles.call_count == 9
+
+
+async def test_a_mixed_grid_forces_the_next_refresh(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The coordinator update consumes the flag and passes force through.
+
+    Asserted on the call rather than on its effects: the capture runs as a
+    background task, which `async_block_till_done` deliberately does not wait
+    for, so watching for stored frames here would race it.
+    """
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    tiles = _mixed_grid()
+    mock_tiles.side_effect = lambda layer, z, x, y: tiles[
+        (x - entity._origin[0], y - entity._origin[1])
+    ]
+    entity._rendered = None
+    await entity.async_image()
+    assert entity._force_next is True
+
+    with patch.object(entity, "async_capture_if_changed", return_value=None) as capture:
+        entity._handle_coordinator_update()
+        await hass.async_block_till_done()
+
+    capture.assert_called_once_with(force=True)
+    assert entity._force_next is False, "the flag must not stick"
+
+    # And an ordinary refresh does not force.
+    with patch.object(entity, "async_capture_if_changed", return_value=None) as capture:
+        entity._handle_coordinator_update()
+        await hass.async_block_till_done()
+
+    capture.assert_called_once_with(force=False)
+
+
+async def test_forced_capture_re_renders_and_stores(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """A forced capture ignores the probe and commits a clean grid."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._store.frame_hash = None
+    entity._store.probe_hash = None
+
+    tiles = _mixed_grid()
+    mock_tiles.side_effect = lambda layer, z, x, y: tiles[
+        (x - entity._origin[0], y - entity._origin[1])
+    ]
+    entity._rendered = None
+    await entity.async_image()
+    frames_before = len(entity._store.frames())
+
+    # OpenWeather finishes its update run; the retry sees a consistent grid.
+    mock_tiles.side_effect = None
+    mock_tiles.return_value = _png((10, 200, 10, 255))
+    mock_tiles.reset_mock()
+
+    await entity.async_capture_if_changed(force=True)
+
+    # Nine tiles for the grid and no tenth for the probe.
+    assert mock_tiles.call_count == 9
+    assert len(entity._store.frames()) == frames_before + 1
+    assert entity._retries == 0
+    assert entity._force_next is False
+
+
+async def test_a_clean_refresh_still_uses_the_probe(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """Forcing is reserved for a mixed grid; the saving stays otherwise."""
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()
+
+    mock_tiles.reset_mock()
+    await entity.async_capture_if_changed()
+
+    assert mock_tiles.call_count == 1
