@@ -130,3 +130,54 @@ async def test_diagnostics_contains_useful_state(
     assert result["counts"]["daily"] == 16
     assert result["counts"]["hourly"] == 40
     assert result["data"]["daily_first"]["temp"]["max"] == 21.7
+
+
+def test_basemap_url_secrets_are_recognised() -> None:
+    """A key in the basemap URL must be scrubbed like the OpenWeather one.
+
+    CARTO's raster basemaps take the key as a query parameter, and aiohttp
+    transport errors can quote the URL they failed on.
+    """
+    from custom_components.owm_startup.image import _url_secrets
+
+    assert _url_secrets(
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=SECRET"
+    ) == ["SECRET"]
+    assert _url_secrets("https://tiles.example/{z}/{x}/{y}.png?api_key=SECRET") == [
+        "SECRET"
+    ]
+    # Nothing credential-like, nothing registered.
+    assert (
+        _url_secrets("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png") == []
+    )
+    assert _url_secrets("https://tiles.example/{z}/{x}/{y}.png?style=dark") == []
+
+
+async def test_basemap_key_is_scrubbed_from_logs(
+    hass: HomeAssistant, config_entry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Reading the option registers the key, so later logs cannot carry it."""
+    from custom_components.owm_startup.const import CONF_BASEMAP_URL
+    from custom_components.owm_startup.image import MAP_TYPES, OwmMapImage
+
+    caplog.set_level(logging.DEBUG)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry,
+        options={
+            CONF_BASEMAP_URL: (
+                "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=CARTOKEY"
+            )
+        },
+    )
+
+    entity = object.__new__(OwmMapImage)
+    entity._entry = config_entry
+    entity.entity_description = MAP_TYPES[0]
+    assert "CARTOKEY" in entity._basemap_url
+
+    logging.getLogger("custom_components.owm_startup.image").warning(
+        "Could not fetch basemap tile: Cannot connect to host with key=CARTOKEY"
+    )
+    assert "CARTOKEY" not in caplog.text
+    assert REDACTED in caplog.text
