@@ -29,6 +29,7 @@ import math
 from pathlib import Path
 import time
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
@@ -78,7 +79,7 @@ from .const import (
 )
 from .coordinator import OwmStartupCoordinator
 from .frames import FrameStore, grid_hash, image_hash
-from .redaction import redact
+from .redaction import redact, register_secret
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -217,7 +218,16 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
 
     @property
     def _basemap_url(self) -> str:
-        return self._entry.options.get(CONF_BASEMAP_URL, DEFAULT_BASEMAP_URL)
+        """Return the basemap template, registering any key it carries.
+
+        CARTO's raster basemaps require a key as of August 2026, passed in the
+        tile URL. Transport errors from aiohttp can quote that URL, so the key
+        is registered for redaction the same way the OpenWeather one is.
+        """
+        template = self._entry.options.get(CONF_BASEMAP_URL, DEFAULT_BASEMAP_URL)
+        for secret in _url_secrets(template):
+            register_secret(secret)
+        return template
 
     def _reference_bounds(self) -> tuple[float, float] | None:
         """Return today's forecast low and high, in the layer's own units.
@@ -791,6 +801,20 @@ def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
         _LOGGER.debug(
             "Layer %s: %.1f%% of pixels carry data", layer, painted / total * 100
         )
+
+
+def _url_secrets(url: str) -> list[str]:
+    """Return credential-looking query values from a URL."""
+    if not url or "?" not in url:
+        return []
+    query = parse_qs(urlparse(url).query)
+    return [
+        value
+        for name, values in query.items()
+        if name.lower() in ("key", "api_key", "apikey", "access_token", "token")
+        for value in values
+        if value
+    ]
 
 
 def _read_cached(path: Path) -> bytes | None:
