@@ -197,9 +197,139 @@ Notes on it:
   to local midnight — so the handover from recorded to forecast tracks the
   current time on its own.
 
-The same pattern works for any pollutant if you swap the entities, but only the
-AQI sensors carry the hourly `forecast` attribute — the others expose the peak
-and its time, not a timeline.
+### Charting a single pollutant
+
+The other pollutants have no hourly timeline — their band sensors expose the
+window's peak and the time it falls, and nothing between. That still charts
+usefully: a continuous measured line, then one marked point per forecast window.
+
+Four days here rather than three, from the day before yesterday to the end of
+tomorrow, so two days of measurement sit behind the two predicted peaks. Put one
+of these per pollutant on a page and the pattern across them reads at a glance.
+
+```yaml
+type: custom:apexcharts-card
+experimental:
+  color_threshold: true
+graph_span: 96h
+span:
+  start: day
+  offset: "-2d"
+header:
+  show: true
+  title: PM2.5
+  show_states: true
+  colorize_states: true
+now:
+  show: true
+  label: Now
+yaxis:
+  - min: 0
+    decimals: 0
+    apex_config:
+      title:
+        text: µg/m³
+apex_config:
+  markers:
+    # Nothing on the measured line, a dot on each forecast peak.
+    size: [0, 7, 7]
+    strokeWidth: 0
+  annotations:
+    # OpenWeather's own PM2.5 band boundaries, so the line can be read
+    # against the same scale the band sensors use.
+    yaxis:
+      - y: 10
+        borderColor: "#8bc34a"
+        label:
+          text: Fair
+          style:
+            background: "#8bc34a"
+      - y: 25
+        borderColor: "#ff9800"
+        label:
+          text: Moderate
+          style:
+            background: "#ff9800"
+      - y: 50
+        borderColor: "#f44336"
+        label:
+          text: Poor
+          style:
+            background: "#f44336"
+      - y: 75
+        borderColor: "#9c27b0"
+        label:
+          text: Very poor
+          style:
+            background: "#9c27b0"
+series:
+  # Measured: recorder history of the numeric sensor, up to now.
+  - entity: sensor.zoetermeer_pm2_5
+    name: Measured
+    type: area
+    curve: smooth
+    stroke_width: 2
+    opacity: 0.25
+    extend_to: false
+    group_by:
+      func: max
+      duration: 1h
+    color_threshold:
+      - value: 0
+        color: "#4caf50"
+      - value: 10
+        color: "#8bc34a"
+      - value: 25
+        color: "#ff9800"
+      - value: 50
+        color: "#f44336"
+      - value: 75
+        color: "#9c27b0"
+  # Forecast: one point per window, at the hour the peak is expected.
+  - entity: sensor.zoetermeer_pm2_5_level_today
+    name: Peak today
+    type: line
+    stroke_width: 0
+    extend_to: false
+    data_generator: |
+      const value = entity.attributes.value;
+      const at = entity.attributes.peak_at;
+      // Late in the day today's window can be empty, and there is then no
+      // peak to plot.
+      if (value == null || !at) {
+        return [];
+      }
+      return [[new Date(at).getTime(), value]];
+  - entity: sensor.zoetermeer_pm2_5_level_tomorrow
+    name: Peak tomorrow
+    type: line
+    stroke_width: 0
+    extend_to: false
+    data_generator: |
+      const value = entity.attributes.value;
+      const at = entity.attributes.peak_at;
+      if (value == null || !at) {
+        return [];
+      }
+      return [[new Date(at).getTime(), value]];
+```
+
+Notes on it:
+
+- The forecast series are `type: line` with `stroke_width: 0`, so a single point
+  renders as a dot rather than as a line going nowhere. The dot sizes come from
+  the card-level `markers.size` array, one entry per series in order.
+- The measured series is coloured by the same PM2.5 boundaries as the
+  annotations, so a line crossing the *Moderate* rule changes colour at the same
+  place. Swap both sets together if you chart a different pollutant; the
+  boundaries differ per pollutant and are listed in the band table above.
+- `curve: smooth` rather than the `stepline` used for the index chart. This is a
+  continuous concentration, not an ordinal band, so interpolating between
+  readings is honest here.
+- Today's peak can be in the past: the window runs from now to midnight, and
+  the peak may already have passed. That is why it is drawn as a point at its
+  own time rather than pinned to the right-hand edge.
+
 
 **Forecasts are bands only.** A microgram figure two days out reads as a
 precision the model does not have, while "Moderate tomorrow" is something you
@@ -318,11 +448,33 @@ boundary pixels land between palette entries. Read the range as indicative.
 
 ### Contrast stretch
 
-On by default. OpenWeather's palettes cover the whole globe, so a 200 km view of
-a 3 °C spread renders as very nearly one colour. With the stretch on, every
-painted pixel is matched back to a value and re-mapped across a ramp fitted to
-the observed range — blue to red for temperature, opacity for cloud, blue to
-violet for precipitation — and the legend bar shows that same ramp.
+Set per layer: **on for temperature, off for cloud** by default.
+
+OpenWeather's temperature palette covers the whole globe, so a 200 km view of a
+3 °C spread renders as very nearly one colour. With the stretch on, every
+painted pixel is matched back to a value and re-mapped across a ramp, and the
+legend bar shows that same ramp.
+
+For temperature the ramp is fitted to **today's forecast range**, widened if
+necessary to cover anything in view:
+
+```
+low  = min(today's forecast minimum, lowest value in view)
+high = max(today's forecast maximum, highest value in view)
+```
+
+Fitting each frame to its own contents would make the colours mean something
+different from one frame to the next — a morning at 16 °C and an afternoon at
+24 °C would both render mid-ramp, so the animation would show no warming at
+all. Anchoring to the day means the scale only moves when the forecast does, so
+frames are comparable, while the union guarantees nothing in view is clipped.
+The legend says `today's range` rather than `range in view` when this applies.
+
+Cloud cover is different: it already uses the full 0-100% of its own palette, so
+there is little to gain and the stretch mostly amplifies noise. In the animation
+that noise flickers between frames, because each frame is fitted to its own
+range — a scene that barely changed can still shift in appearance. Hence the
+separate option and the different default.
 
 Two things worth knowing:
 
@@ -332,7 +484,7 @@ Two things worth knowing:
   real resolution of the source, which the unstretched view simply hides.
 - Overlay opacity is kept below full so the basemap still reads through.
 
-Turn it off in the options to get OpenWeather's own colours.
+Either option can be flipped to get OpenWeather's own colours for that layer.
 
 Legend text is drawn into the image, so Home Assistant cannot translate it.
 It follows the integration's configured language instead (English, Dutch,
@@ -457,6 +609,24 @@ fallback to an earlier tile — a mixed-vintage map would look plausible and be
 wrong, which is worse than no map. The same applies to a tile that arrives
 truncated.
 
+When a mismatch is detected the map is still **shown** — it is mostly right, and
+withholding it would put a broken image on the dashboard — but it is not
+committed to the animation, where a bad frame would flicker for twelve hours.
+Instead the next scheduled refresh re-renders it, half an hour later, by which
+time OpenWeather has usually finished its update run. Waiting for the normal
+cadence rather than retrying sooner is deliberate: if the stale tiles are being
+served from a CDN cache rather than regenerated, a few minutes returns the same
+bytes.
+
+That re-render skips the probe tile. Without that, an unchanged centre tile
+would hold a bad map in place indefinitely, which is the case this exists to
+fix.
+
+The retry is bounded at two attempts. A sharp weather front sitting on a tile
+boundary looks the same to the detector, and a persistent false positive would
+otherwise starve the sequence; after the attempts are spent the frame is stored
+regardless, with a warning.
+
 Each render checks its tile seams: a step much larger than the gradient beside
 it means the tiles disagree rather than the weather does. When that happens the
 map gets a red banner reading *tiles from different updates*, and a warning is
@@ -494,6 +664,8 @@ instead.
 - Language
 - Basemap tile URL (blank disables the basemap)
 - Basemap attribution
+- Stretch temperature map contrast (default on)
+- Stretch cloud map contrast (default off)
 
 Forecast length, air quality windows and the update interval are fixed at the
 values the Startup plan supports: a 16-day daily forecast, a 120-hour 3-hourly

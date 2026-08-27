@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A weather map whose tiles disagree across a seam is no longer captured into
+  the animation. The map is still shown, and the next scheduled refresh
+  re-renders it with the probe tile skipped, so an unchanged centre tile cannot
+  hold a bad map in place. Bounded at two attempts, so a sharp front sitting on
+  a tile boundary cannot starve the sequence.
+
+### Changed
+
+- The temperature map's contrast stretch is fitted to today's forecast range,
+  widened to cover anything in view, instead of to each frame's own contents.
+  Consecutive frames now share a scale, so an animation shows the day warming
+  rather than every frame looking the same.
+- The contrast stretch is now set per layer rather than for both maps at once,
+  and defaults to on for temperature and off for cloud. Cloud cover already
+  uses the full range of its palette, so stretching it amplifies noise, which
+  flickers between frames in the animation. The single `contrast_stretch`
+  option is replaced by `contrast_stretch_temperature` and
+  `contrast_stretch_clouds`; a previously saved value is not carried over.
+
 ## [2.0.0] - 2026-08-26
 
 Air quality is now published as qualitative bands, and the maps gained a
@@ -44,6 +65,9 @@ Air quality is now published as qualitative bands, and the maps gained a
 - Removing a config entry deletes its captured frames, and the basemap cache
   once the last entry is gone. Frames are keyed by entry id, so a
   remove-and-re-add previously left an unreachable directory of images behind.
+- Second README chart example, for a single pollutant across four days: a
+  measured line from recorder history, one marked point per forecast window,
+  and annotation lines at OpenWeather's band boundaries.
 - README example for charting air quality across yesterday, today and tomorrow
   with apexcharts-card, taking the past from the numeric index sensor's
   recorded history and the future from the forecast attributes. A test pins the
@@ -62,6 +86,9 @@ Air quality is now published as qualitative bands, and the maps gained a
 - Registry cleanup for entities removed in earlier versions.
 
 ### Fixed
+
+- The temperature stretch anchor was computed but never passed to the renderer,
+  so the maps were still fitted per frame.
 
 - A map render could be started twice at once, by a frontend request arriving
   while a background capture was in flight, and a capture slower than the

@@ -130,6 +130,14 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - Weather map tiles are all-or-nothing on purpose: no per-tile cache, no
   fallback to an earlier tile, no partial grid. A map assembled from tiles of
   different ages looks plausible and is wrong. Two tests hold this in place.
+- A mixed grid is shown but not captured, and re-rendered on the next scheduled
+  refresh via `_force_next`. Keep those two decisions apart: withholding the
+  image breaks the dashboard, storing the frame poisons the animation for
+  twelve hours. The retry passes `force=True` so it skips the probe, and must
+  leave the store hashes untouched or it will look already captured.
+- `async_create_background_task` is not awaited by `async_block_till_done`, so
+  a test that schedules a capture and then asserts on stored frames is racing
+  it. Assert on the call, or await `async_capture_if_changed` directly.
 - Mismatched tiles across a seam are an upstream artefact, not a rendering bug.
   `seam_mismatch` compares the step at a tile boundary against the gradient
   beside it; tuning `SEAM_FLOOR` or `SEAM_RATIO` changes how readily the banner
@@ -159,6 +167,15 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - The legend is scaled to the range observed in the view, not the full palette.
   Range detection runs on the overlay alone (`overlay_only`), never on the
   composited image: matching colours through a basemap would be meaningless.
+- The temperature stretch is anchored to the day's forecast range via
+  `daily_range` on the description, unioned with the observed range. Do not
+  drop the anchor back to per-frame fitting: identical temperatures would be
+  drawn in different colours from frame to frame. Do not drop the union either:
+  a value outside the forecast range would clip.
+- The contrast stretch is per layer, via `stretch_option` and
+  `stretch_default` on `OwmMapDescription`. Do not collapse it back into one
+  option: it helps temperature and hurts cloud, especially in the animation
+  where per-frame range fitting makes noise flicker.
 - Maps fetch a 3x3 grid and crop a centred window. Do not "optimise" this to
   2x2: with an even grid the point cannot be centred, it lands wherever it
   falls inside its own tile.
