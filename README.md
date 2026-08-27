@@ -490,6 +490,37 @@ Legend text is drawn into the image, so Home Assistant cannot translate it.
 It follows the integration's configured language instead (English, Dutch,
 German and French are covered; anything else falls back to English).
 
+#### A CARTO API key is now required
+
+Since 26 August 2026 CARTO requires an API key on its raster basemaps. Requests
+without one still return tiles, but they carry a repeated **"API KEY REQUIRED"**
+watermark. That is worse here than on a live map: this integration caches
+basemap tiles for 30 days and bakes them into 12 hours of animation frames, so
+an unkeyed watermark sticks around.
+
+1. Request a key at <https://carto.com/basemaps/apikey>. It is free within their
+   fair use limit, needs no CARTO account, and is emailed back immediately.
+2. Append it to the basemap URL in the integration's options as a `key`
+   parameter:
+
+   ```
+   https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=YOUR_KEY
+   ```
+
+Changing the URL changes the cache key, so the watermarked tiles you already
+have are dropped and refetched — no manual clean-up. The key stays server-side,
+never reaches the browser, and is redacted from this integration's logs the same
+way the OpenWeather key is.
+
+If you would rather not sign up at all, set the basemap URL to blank. The
+weather layers then render over a plain background: readable, but with no
+coastlines or place names. Home Assistant's own map is affected by the same
+change, so it is worth having the key regardless.
+
+CARTO have also said the raster basemaps are **being retired** in favour of
+vector tiles, which this integration cannot consume — it composites PNG tiles
+server-side. When that lands, a different raster provider will be needed.
+
 The basemap defaults to CARTO's **dark** style — the same source the Home
 Assistant frontend uses, but the dark variant, because the cloud layer is white
 and precipitation is pale blue. It is fetched once and cached on disk under

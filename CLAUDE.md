@@ -149,6 +149,10 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   translations. Add new strings to `legend.TRANSLATIONS` in every language
   there — a test enforces that the tables match. Keep the text ASCII-safe
   apart from "©": the bitmap fallback font cannot draw "·".
+- CARTO's raster basemaps need an API key as of August 2026, passed as `?key=`
+  in the tile URL, and are slated for retirement in favour of vector tiles that
+  this integration cannot composite. If they go, a different raster provider is
+  needed; do not switch the default to `tile.openstreetmap.org`.
 - The basemap cache key includes a hash of the tile URL. Do not simplify it
   back to z/x/y: switching styles then silently reuses the old tiles.
 - The precipitation map was removed deliberately and completely. If it is ever
