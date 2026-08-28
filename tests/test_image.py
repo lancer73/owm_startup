@@ -1101,3 +1101,108 @@ async def test_a_clean_refresh_still_uses_the_probe(
     await entity.async_capture_if_changed()
 
     assert mock_tiles.call_count == 1
+
+
+def _palette_tile(value: float) -> bytes:
+    """Return a flat tile painted at one temperature."""
+    from custom_components.owm_startup.const import LEGENDS
+    from custom_components.owm_startup.legend import colour_at
+
+    return _png(colour_at(LEGENDS["temp_new"]["stops"], value))
+
+
+def _seam_detected(tiles: dict, stretch: bool) -> bool:
+    """Compose a grid and report whether the seam check fired."""
+    from custom_components.owm_startup.image import OwmMapImage
+
+    return OwmMapImage._compose(
+        None,
+        tiles,
+        (384.0, 384.0),
+        "attr",
+        "temp_new",
+        stretch,
+        "en",
+        None,
+        None,
+        (12.0, 24.0),
+    ).mixed_tiles
+
+
+def test_a_subtle_step_is_caught_once_the_stretch_amplifies_it() -> None:
+    """A one-palette-step difference is invisible raw and glaring stretched.
+
+    OpenWeather's temperature palette barely moves over a couple of degrees,
+    so a mixed grid can differ by only a few RGB units before stretching. The
+    check therefore runs on the stretched pixels, which is what the reader is
+    looking at.
+    """
+    tiles = {
+        (dx, dy): _palette_tile(17.6 if dy == 0 else 18.4)
+        for dx in range(3)
+        for dy in range(3)
+    }
+    assert _seam_detected(tiles, stretch=True) is True
+
+
+def test_a_step_across_part_of_a_seam_is_caught() -> None:
+    """Two model runs differ only where the weather is doing something.
+
+    Averaging the whole seam line hides a step that covers a third of it, so
+    the seam is examined in segments.
+    """
+    import io
+
+    from PIL import Image
+
+    from custom_components.owm_startup.const import LEGENDS
+    from custom_components.owm_startup.legend import colour_at
+
+    stops = LEGENDS["temp_new"]["stops"]
+    quiet = colour_at(stops, 18.0)
+    busy = colour_at(stops, 22.0)
+
+    def half_and_half(top: bool) -> bytes:
+        """Return a tile whose left third differs, just above the seam."""
+        image = Image.new("RGBA", (256, 256), quiet)
+        if top:
+            for x in range(80):
+                for y in range(200, 256):
+                    image.putpixel((x, y), busy)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    tiles = {(dx, dy): half_and_half(dy == 0) for dx in range(3) for dy in range(3)}
+    assert _seam_detected(tiles, stretch=True) is True
+
+
+def test_a_uniform_grid_is_not_flagged() -> None:
+    """No step, no banner: the segmented check must not cry wolf."""
+    tiles = {(dx, dy): _palette_tile(18.0) for dx in range(3) for dy in range(3)}
+    assert _seam_detected(tiles, stretch=True) is False
+
+
+def test_a_smooth_gradient_is_not_flagged() -> None:
+    """A real field crossing a seam must pass, segment by segment."""
+    import io
+
+    from PIL import Image
+
+    from custom_components.owm_startup.const import LEGENDS
+    from custom_components.owm_startup.legend import colour_at
+
+    stops = LEGENDS["temp_new"]["stops"]
+
+    def ramp(dy: int) -> bytes:
+        image = Image.new("RGBA", (256, 256))
+        for y in range(256):
+            colour = colour_at(stops, 14.0 + 8.0 * ((dy * 256 + y) / 768))
+            for x in range(256):
+                image.putpixel((x, y), colour)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    tiles = {(dx, dy): ramp(dy) for dx in range(3) for dy in range(3)}
+    assert _seam_detected(tiles, stretch=True) is False
