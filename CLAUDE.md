@@ -138,6 +138,10 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - `async_create_background_task` is not awaited by `async_block_till_done`, so
   a test that schedules a capture and then asserts on stored frames is racing
   it. Assert on the call, or await `async_capture_if_changed` directly.
+- `seam_mismatch` runs after the stretch, on the displayed pixels, and checks
+  each seam in segments. Both are load-bearing: raw palette differences of a
+  mixed grid can sit below the floor, and a partial step averages away over a
+  full seam line. Do not move the call back before the stretch.
 - Mismatched tiles across a seam are an upstream artefact, not a rendering bug.
   `seam_mismatch` compares the step at a tile boundary against the gradient
   beside it; tuning `SEAM_FLOOR` or `SEAM_RATIO` changes how readily the banner

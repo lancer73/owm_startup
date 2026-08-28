@@ -467,6 +467,12 @@ along a tile boundary. The map is labelled with a red banner when this is
 detected, is kept out of the animation, and is re-rendered on the next
 refresh. It is upstream, not local.
 
+Detection runs on the stretched pixels rather than the raw tiles, and examines
+each seam in segments. Both matter: a mixed grid can differ by as little as one
+step of OpenWeather's palette, which is invisible raw but obvious once the
+range is spread across a full ramp, and two model runs usually differ over only
+part of a boundary, which averaging the whole seam line would hide.
+
 **The cloud map looks nearly empty.** The cloud layer runs from transparent at
 0% to opaque white at 100%, so light cloud is faint by design. Enable debug
 logging and each render reports what fraction of the layer carries data:

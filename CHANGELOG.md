@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-08-28
+
+### Fixed
+
+- Tile seam detection missed most real mismatches. It ran on the raw tiles,
+  where a mixed grid can differ by as little as one step of OpenWeather's
+  palette — 7 units of summed RGBA against a floor of 8 — while the contrast
+  stretch makes that same difference obvious on screen. It now runs on the
+  stretched pixels, which is what the reader sees. It also averaged each seam
+  over its full length, hiding a step covering only part of a boundary; seams
+  are now examined in segments.
+
+### Changed
+
+- README restructured: what the integration provides, then installation and
+  configuration, then dashboard use, then how to obtain a Startup plan.
+  Reasoning about the polling interval, which was internal design rationale
+  rather than anything a reader acts on, has been dropped, and troubleshooting
+  gathered into one section.
+
 ## [2.1.0] - 2026-08-27
 
 ### Added
@@ -217,7 +237,8 @@ First stable release. Entity ids, attribute names and options changed from
   language.
 - English and Dutch translations.
 
-[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/lancer73/owm_startup/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/lancer73/owm_startup/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/lancer73/owm_startup/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/lancer73/owm_startup/compare/v0.1.0...v1.0.0
