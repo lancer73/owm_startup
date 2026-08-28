@@ -71,6 +71,7 @@ from .const import (
     MIXED_TILE_MAX_RETRIES,
     SEAM_FLOOR,
     SEAM_RATIO,
+    SEAM_SEGMENTS,
     USER_AGENT,
     WIND_ARROW_BASE,
     WIND_ARROW_LAYERS,
@@ -655,16 +656,6 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             for boundary in (MAP_TILE_SIZE, MAP_TILE_SIZE * 2)
             if 0 < boundary - offset < MAP_VIEW
         ]
-        mixed_tiles = seam_mismatch(overlay_view, seams)
-        if mixed_tiles:
-            _LOGGER.warning(
-                "The %s tiles do not line up across a tile boundary. This is an "
-                "upstream artefact: OpenWeather served the grid from more than "
-                "one model run. The map is labelled accordingly and should "
-                "correct itself on the next update",
-                layer,
-            )
-
         bounds = legend_module.observed_range(overlay_view, layer)
         # Union with the day's forecast range, so the scale holds still between
         # frames while never clipping something that is actually in view.
@@ -679,6 +670,21 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         stretched = contrast_stretch and bounds is not None
         if stretched:
             overlay_view = legend_module.stretch(overlay_view, layer, bounds)
+
+        # Checked after the stretch, on the pixels the reader actually sees.
+        # A one-step difference in OpenWeather's palette is invisible in raw
+        # form but glaring once the range is spread across a full ramp, and
+        # that is precisely the case that kept slipping through.
+        mixed_tiles = seam_mismatch(overlay_view, seams)
+        if mixed_tiles:
+            _LOGGER.warning(
+                "The %s tiles do not line up across a tile boundary. This is "
+                "an upstream artefact: OpenWeather served the grid from more "
+                "than one model run. The map is labelled accordingly and "
+                "should correct itself on the next update",
+                layer,
+            )
+
         view.alpha_composite(overlay_view, (0, 0))
 
         # Legend and attribution sit below the map rather than over it, so
@@ -719,50 +725,57 @@ def seam_mismatch(overlay, seams: list[tuple[str, int]]) -> bool:
     """Return whether the layer steps discontinuously across a tile seam.
 
     OpenWeather sometimes serves a grid assembled from two model runs, leaving
-    a straight brightness step along a tile boundary. Weather fields are smooth
-    at this scale, so a jump at a seam that is far larger than the gradient
-    just beside it means the tiles disagree rather than the weather does.
+    a straight step along a tile boundary. Weather fields are smooth at this
+    scale, so a jump at a seam far larger than the gradient just beside it
+    means the tiles disagree rather than the weather does.
+
+    Each seam is checked in segments. Two model runs differ only where the
+    weather is doing something, so a step typically covers part of a boundary
+    and would be averaged away by the identical remainder if the whole line
+    were taken at once.
     """
     pixels = overlay.convert("RGBA")
     width, height = pixels.size
 
-    def column_delta(x: int) -> float:
-        if x < 1 or x >= width:
-            return 0.0
-        left, right = (
-            pixels.crop((x - 1, 0, x, height)),
-            pixels.crop((x, 0, x + 1, height)),
-        )
-        return _mean_delta(left, right)
-
-    def row_delta(y: int) -> float:
-        if y < 1 or y >= height:
-            return 0.0
-        above, below = (
-            pixels.crop((0, y - 1, width, y)),
-            pixels.crop((0, y, width, y + 1)),
-        )
-        return _mean_delta(above, below)
+    def delta(axis: str, position: int, low: int, high: int) -> float:
+        """Mean absolute difference across one seam, over one segment."""
+        if axis == "x":
+            if position < 1 or position >= width:
+                return 0.0
+            before = pixels.crop((position - 1, low, position, high))
+            after = pixels.crop((position, low, position + 1, high))
+        else:
+            if position < 1 or position >= height:
+                return 0.0
+            before = pixels.crop((low, position - 1, high, position))
+            after = pixels.crop((low, position, high, position + 1))
+        return _mean_delta(before, after)
 
     for axis, position in seams:
-        delta = column_delta(position) if axis == "x" else row_delta(position)
-        neighbours = [
-            column_delta(position + offset)
-            if axis == "x"
-            else row_delta(position + offset)
-            for offset in (-4, -3, 3, 4)
-        ]
-        baseline = sum(neighbours) / len(neighbours) if neighbours else 0.0
-        if delta > SEAM_FLOOR and delta > baseline * SEAM_RATIO:
-            _LOGGER.debug(
-                "Tile seam at %s=%d steps by %.1f against a local gradient of "
-                "%.1f; the grid is probably mixing model runs",
-                axis,
-                position,
-                delta,
-                baseline,
-            )
-            return True
+        length = height if axis == "x" else width
+        span = max(1, length // SEAM_SEGMENTS)
+        for low in range(0, length, span):
+            high = min(low + span, length)
+            step = delta(axis, position, low, high)
+            if step <= SEAM_FLOOR:
+                continue
+            neighbours = [
+                delta(axis, position + offset, low, high) for offset in (-4, -3, 3, 4)
+            ]
+            baseline = sum(neighbours) / len(neighbours)
+            if step > baseline * SEAM_RATIO:
+                _LOGGER.debug(
+                    "Tile seam at %s=%d steps by %.1f over %d-%d against a "
+                    "local gradient of %.1f; the grid is probably mixing "
+                    "model runs",
+                    axis,
+                    position,
+                    step,
+                    low,
+                    high,
+                    baseline,
+                )
+                return True
     return False
 
 

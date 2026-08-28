@@ -129,6 +129,11 @@ USER_AGENT: Final = "owm_startup (+https://github.com/lancer73/owm_startup)"
 # tiles disagreeing rather than the weather changing.
 SEAM_FLOOR: Final = 8.0
 SEAM_RATIO: Final = 3.0
+# The seam is examined in segments rather than as one line. A step across part
+# of a boundary -- which is the usual shape, since two model runs only differ
+# where the weather is doing something -- is averaged away by the identical
+# remainder if the whole line is taken at once.
+SEAM_SEGMENTS: Final = 8
 # When a grid comes back mixed the frame is not committed; the next scheduled
 # refresh re-renders it, skipping the probe. Retrying sooner is not worth it:
 # if OpenWeather's CDN is serving the stale tiles from cache rather than
