@@ -83,11 +83,16 @@ def grid_hash(tiles: dict[tuple[int, int], bytes]) -> str:
 class FrameStore:
     """Keeps the recent frames for one layer on disk."""
 
-    def __init__(self, hass: HomeAssistant, root: Path, layer: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, root: Path, layer: str, signature: str
+    ) -> None:
         """Initialise the store."""
         self.hass = hass
         self.directory = root / layer
         self.layer = layer
+        # Identifies the look of a frame. Frames captured under a different
+        # signature cannot play alongside these ones.
+        self.signature = signature
         self.probe_hash: str | None = None
         self.frame_hash: str | None = None
         self._loaded = False
@@ -118,6 +123,20 @@ class FrameStore:
             return
         self._loaded = True
         state = await self.hass.async_add_executor_job(self._read_state)
+
+        if state.get("signature") != self.signature:
+            # The renderer changed: a basemap swap, a palette change, or the
+            # contrast stretch being toggled. Old frames would play as a jump
+            # in the middle of the animation.
+            if state:
+                _LOGGER.info(
+                    "Discarding stored %s frames: they were captured by a "
+                    "different renderer",
+                    self.layer,
+                )
+            await self.hass.async_add_executor_job(self._discard)
+            return
+
         # Never clobber a hash already set in this session: a capture may have
         # run before the entity finished loading.
         self.probe_hash = self.probe_hash or state.get("probe_hash")
@@ -130,13 +149,28 @@ class FrameStore:
         except (OSError, ValueError):
             return {}
 
+    def _discard(self) -> None:
+        """Delete every stored frame and the state beside it."""
+        self.probe_hash = None
+        self.frame_hash = None
+        try:
+            for path in self.directory.glob("*.webp"):
+                path.unlink(missing_ok=True)
+            (self.directory / STATE_FILE).unlink(missing_ok=True)
+        except OSError as err:
+            _LOGGER.debug("Could not discard %s frames: %s", self.layer, err)
+
     def _write_state(self) -> None:
         """Persist the hashes. Runs in an executor."""
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
             (self.directory / STATE_FILE).write_text(
                 json.dumps(
-                    {"probe_hash": self.probe_hash, "frame_hash": self.frame_hash}
+                    {
+                        "signature": self.signature,
+                        "probe_hash": self.probe_hash,
+                        "frame_hash": self.frame_hash,
+                    }
                 )
             )
         except OSError as err:

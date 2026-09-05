@@ -35,15 +35,11 @@
         "title": "Options",
         "data": {
           "language": "Language",
-          "basemap_url": "Basemap tile URL",
-          "basemap_attribution": "Basemap attribution",
           "contrast_stretch_temperature": "Stretch temperature map contrast",
           "contrast_stretch_clouds": "Stretch cloud map contrast"
         },
         "description": "Weather data © OpenWeather, licensed under ODbL.\n\nForecast length, air quality windows and the update interval are fixed at the values the Startup plan supports: 16-day daily forecast, 120-hour 3-hourly forecast, air quality peaks for today and tomorrow, and updates every 30 minutes.",
         "data_description": {
-          "basemap_url": "Tile template with {z}, {x} and {y} placeholders, drawn behind the weather maps. Defaults to the CARTO style Home Assistant itself uses. Leave empty for no basemap. Do not point this at tile.openstreetmap.org: their usage policy forbids it. CARTO's raster basemaps require a free API key since August 2026; without one the tiles carry an \"API KEY REQUIRED\" watermark. Get one at carto.com/basemaps/apikey and append it as ?key=YOUR_KEY.",
-          "basemap_attribution": "Burned into the corner of every map image. Update this if you change the basemap URL.",
           "contrast_stretch_temperature": "OpenWeather's temperature palette covers the whole globe, so a 200 km view of a few degrees is almost one colour. With this on, the values present in the view are re-mapped across a full colour ramp and the legend follows.",
           "contrast_stretch_clouds": "Cloud cover already uses the full 0-100% of its palette, so stretching it mostly amplifies noise, which flickers between frames in the animation. Off by default; turn it on to pick out thin cloud."
         }

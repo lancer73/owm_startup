@@ -22,14 +22,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-import hashlib
 import io
 import logging
 import math
 from pathlib import Path
 import time
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
@@ -40,6 +38,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -48,20 +47,21 @@ from .api import REQUEST_TIMEOUT, OwmError
 from .const import (
     ANIMATION_MIN_FRAMES,
     ATTRIBUTION,
+    BASEMAP_ATTRIBUTION,
+    BASEMAP_CACHE_STYLE,
     BASEMAP_MAX_AGE,
-    CONF_BASEMAP_ATTRIBUTION,
-    CONF_BASEMAP_URL,
+    BASEMAP_PATH,
     CONF_CONTRAST_STRETCH_CLOUDS,
     CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
-    DEFAULT_BASEMAP_ATTRIBUTION,
-    DEFAULT_BASEMAP_URL,
+    DARKEN_MATRIX,
     DEFAULT_CONTRAST_STRETCH_CLOUDS,
     DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
     DEFAULT_LANGUAGE,
     DEVICE_MODEL,
     DOMAIN,
     FRAME_WINDOW_HOURS,
+    HA_TILE_PROXY_DOMAIN,
     LEGEND_HEIGHT,
     MANUFACTURER,
     MAP_GRID,
@@ -69,6 +69,7 @@ from .const import (
     MAP_VIEW,
     MAP_ZOOM,
     MIXED_TILE_MAX_RETRIES,
+    RENDER_REVISION,
     SEAM_FLOOR,
     SEAM_RATIO,
     SEAM_SEGMENTS,
@@ -80,7 +81,7 @@ from .const import (
 )
 from .coordinator import OwmStartupCoordinator
 from .frames import FrameStore, grid_hash, image_hash
-from .redaction import redact, register_secret
+from .redaction import redact, scrub_query_secrets
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +156,17 @@ async def async_setup_entry(
 
     entities: list[ImageEntity] = []
     for description in MAP_TYPES:
-        store = FrameStore(hass, root, description.layer)
+        # The stretch setting changes how a frame looks as much as a palette
+        # change does, so it belongs in the signature alongside the revision.
+        stretch = entry.options.get(
+            description.stretch_option, description.stretch_default
+        )
+        store = FrameStore(
+            hass,
+            root,
+            description.layer,
+            f"{RENDER_REVISION}:{'stretched' if stretch else 'plain'}",
+        )
         entities.append(OwmMapImage(coordinator, entry, description, store))
         entities.append(OwmMapAnimation(coordinator, entry, description, store))
     async_add_entities(entities)
@@ -217,19 +228,6 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             CONF_LANGUAGE, self._entry.data.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
         )
 
-    @property
-    def _basemap_url(self) -> str:
-        """Return the basemap template, registering any key it carries.
-
-        CARTO's raster basemaps require a key as of August 2026, passed in the
-        tile URL. Transport errors from aiohttp can quote that URL, so the key
-        is registered for redaction the same way the OpenWeather one is.
-        """
-        template = self._entry.options.get(CONF_BASEMAP_URL, DEFAULT_BASEMAP_URL)
-        for secret in _url_secrets(template):
-            register_secret(secret)
-        return template
-
     def _reference_bounds(self) -> tuple[float, float] | None:
         """Return today's forecast low and high, in the layer's own units.
 
@@ -255,12 +253,6 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         return self._entry.options.get(
             self.entity_description.stretch_option,
             self.entity_description.stretch_default,
-        )
-
-    @property
-    def _basemap_attribution(self) -> str:
-        return self._entry.options.get(
-            CONF_BASEMAP_ATTRIBUTION, DEFAULT_BASEMAP_ATTRIBUTION
         )
 
     @callback
@@ -336,7 +328,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                 basemap,
                 overlay,
                 self._focus,
-                f"{self._basemap_attribution} - {ATTRIBUTION}",
+                f"{BASEMAP_ATTRIBUTION} - {ATTRIBUTION}",
                 self.entity_description.layer,
                 self._contrast_stretch,
                 self._language,
@@ -357,6 +349,7 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                     self.entity_description.layer,
                     self._retries,
                     MIXED_TILE_MAX_RETRIES,
+                    RENDER_REVISION,
                 )
                 self._force_next = True
                 return self._rendered
@@ -467,20 +460,43 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
         )
         return dict(zip(positions, results, strict=True))
 
-    async def _async_basemap(self) -> dict[tuple[int, int], bytes] | None:
-        """Return the basemap tiles, fetching them once and caching on disk."""
-        template = self._basemap_url
-        if not template:
+    def _resolve_tile_url(self, url: str) -> str | None:
+        """Expand the basemap path against this instance.
+
+        The proxy takes its access token in the query string and rotates it
+        every thirty minutes, so the token is added per request.
+        """
+        tokens = self.hass.data.get(HA_TILE_PROXY_DOMAIN)
+        if not tokens:
+            _LOGGER.warning(
+                "The basemap points at %s but the Home Assistant map tiles "
+                "integration is not loaded, so no basemap will be drawn",
+                url,
+            )
             return None
 
+        try:
+            base = get_url(self.hass, allow_external=False, prefer_external=False)
+        except NoURLAvailableError:
+            _LOGGER.warning(
+                "No internal URL is configured, so the Home Assistant tile "
+                "proxy cannot be reached and no basemap will be drawn"
+            )
+            return None
+
+        separator = "&" if "?" in url else "?"
+        return f"{base}{url}{separator}token={tokens[-1]}"
+
+    async def _async_basemap(self) -> dict[tuple[int, int], bytes] | None:
+        """Return the basemap tiles, fetching them once and caching on disk."""
         x0, y0 = self._origin
-        # The style is part of the key. Without it, switching basemaps leaves
-        # previously cached tiles in place and the view comes out half light,
-        # half dark.
-        style = hashlib.sha256(template.encode()).hexdigest()[:12]
         root = Path(self.hass.config.path(".storage", f"{DOMAIN}_basemap"))
-        cache_dir = root / style
-        await self.hass.async_add_executor_job(_prune_other_styles, root, style)
+        cache_dir = root / BASEMAP_CACHE_STYLE
+        # Still pruned: earlier versions cached under a per-provider directory,
+        # and those tiles are unreachable now.
+        await self.hass.async_add_executor_job(
+            _prune_other_styles, root, BASEMAP_CACHE_STYLE
+        )
         session = async_get_clientsession(self.hass)
 
         positions = [(dx, dy) for dx in range(MAP_GRID) for dy in range(MAP_GRID)]
@@ -492,7 +508,9 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
             if data is not None:
                 return data
 
-            url = template.format(z=MAP_ZOOM, x=x, y=y, s="a")
+            url = self._resolve_tile_url(BASEMAP_PATH.format(z=MAP_ZOOM, x=x, y=y))
+            if url is None:
+                return None
             try:
                 async with (
                     asyncio.timeout(REQUEST_TIMEOUT),
@@ -501,8 +519,17 @@ class OwmMapImage(CoordinatorEntity[OwmStartupCoordinator], ImageEntity):
                     response.raise_for_status()
                     data = await response.read()
             except (TimeoutError, aiohttp.ClientError) as err:
-                _LOGGER.warning("Could not fetch basemap tile: %s", err)
+                # Scrubbed: an aiohttp error quotes the URL it failed on, and
+                # that URL carries the proxy token or a provider key.
+                _LOGGER.warning(
+                    "Could not fetch basemap tile: %s", scrub_query_secrets(str(err))
+                )
                 return None
+
+            # The proxy serves the light OpenStreetMap style; these maps need a
+            # dark backdrop. Darkened before caching, so it happens once per
+            # tile rather than on every render.
+            data = await self.hass.async_add_executor_job(_darken, data)
             await self.hass.async_add_executor_job(_write_cached, path, data)
             return data
 
@@ -816,18 +843,22 @@ def _log_coverage(layer: str, overlay: dict[tuple[int, int], bytes]) -> None:
         )
 
 
-def _url_secrets(url: str) -> list[str]:
-    """Return credential-looking query values from a URL."""
-    if not url or "?" not in url:
-        return []
-    query = parse_qs(urlparse(url).query)
-    return [
-        value
-        for name, values in query.items()
-        if name.lower() in ("key", "api_key", "apikey", "access_token", "token")
-        for value in values
-        if value
-    ]
+def _darken(data: bytes) -> bytes:
+    """Return a light basemap tile as a dark, grey one. Runs in an executor.
+
+    Inversion turns land dark but swings every hue to its opposite; rotating
+    180 degrees puts them back. The result is then desaturated, so the weather
+    overlay is the only thing on the image carrying colour.
+    """
+    from PIL import Image, ImageChops, ImageOps
+
+    with Image.open(io.BytesIO(data)) as tile:
+        rotated = ImageChops.invert(tile.convert("RGB")).convert("RGB", DARKEN_MATRIX)
+        dark = ImageOps.grayscale(rotated).convert("RGB")
+
+    buffer = io.BytesIO()
+    dark.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
 
 
 def _read_cached(path: Path) -> bytes | None:

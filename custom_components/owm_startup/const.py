@@ -16,16 +16,55 @@ DEFAULT_NAME: Final = "OpenWeatherMap"
 CONF_LANGUAGE: Final = "language"
 DEFAULT_LANGUAGE: Final = "en"
 
-CONF_BASEMAP_URL: Final = "basemap_url"
-CONF_BASEMAP_ATTRIBUTION: Final = "basemap_attribution"
-# CARTO, the same source the Home Assistant frontend uses. OpenStreetMap's own
-# tile servers are deliberately not the default: their usage policy forbids
-# distributing an application that fetches from them.
+# Bumped whenever a change alters how a rendered image looks. Two caches key
+# off it: stored animation frames, which would otherwise play two styles at
+# once, and the basemap tiles on disk, which are stored already transformed and
+# would otherwise survive a change to that transform for thirty days.
+RENDER_REVISION: Final = 6
+
+# The basemap is Home Assistant's own map tiles integration, which proxies
+# OpenStreetMap's raster tiles server-side with an identifying User-Agent. That
+# is what their policy asks for and what a browser cannot send, so it is the one
+# legitimate route to those tiles from here -- and it needs no key.
 #
-# The dark style, not the light one HA defaults to: the cloud layer is white
-# with rising alpha, so it is close to invisible over a light basemap.
-DEFAULT_BASEMAP_URL: Final = "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-DEFAULT_BASEMAP_ATTRIBUTION: Final = "© OpenStreetMap contributors © CARTO"
+# Not configurable: there is one correct source, it is free, and it ships with
+# Home Assistant. A provider option would only invite a worse choice.
+#
+# A root-relative path is resolved against this instance and given a fresh
+# access token per request: the proxy rotates them every thirty minutes.
+BASEMAP_PATH: Final = "/api/map_tiles/raster/{z}/{x}/{y}.png"
+BASEMAP_ATTRIBUTION: Final = "© OpenStreetMap contributors"
+# Cache directory for the transformed tiles. The revision is part of the name
+# because what is stored is the darkened form: changing that transform has to
+# invalidate the tiles, or they outlive it by up to thirty days. Sibling
+# directories from earlier versions are pruned on the next fetch.
+BASEMAP_CACHE_STYLE: Final = f"osm-r{RENDER_REVISION}"
+HA_TILE_PROXY_DOMAIN: Final = "map_tiles"
+
+# The proxy serves one style: OpenStreetMap standard, which is light and in
+# full colour. These maps are drawn for a dark background, and the overlay
+# needs to own colour outright -- a green field or a red motorway underneath a
+# blue-to-red temperature ramp reads as data that is not there.
+#
+# So tiles are inverted, hue-rotated 180 degrees, and then desaturated. The
+# rotation is not wasted work despite the desaturation that follows: it
+# redistributes luminance across the channels, which leaves motorways at 98
+# against a land value of 16 rather than 81. Inverting and desaturating alone
+# would be simpler and only slightly flatter.
+DARKEN_MATRIX: Final = (
+    -0.574,
+    1.430,
+    0.144,
+    0,
+    0.426,
+    0.430,
+    0.144,
+    0,
+    0.426,
+    1.430,
+    -0.856,
+    0,
+)
 
 # Weather map rendering. A 3x3 grid is fetched and a MAP_VIEW-sized window is
 # cropped from it, centred exactly on the configured coordinates. A 2x2 grid
@@ -65,12 +104,12 @@ DEFAULT_CONTRAST_STRETCH_CLOUDS: Final = False
 STRETCH_RAMPS: Final = {
     # Diverging blue to red: cold reads cold, warm reads warm.
     "temp_new": (
-        (49, 54, 149, 100),
-        (116, 173, 209, 95),
-        (224, 243, 248, 90),
-        (254, 224, 144, 95),
-        (244, 109, 67, 105),
-        (165, 0, 38, 115),
+        (49, 54, 149, 50),
+        (116, 173, 209, 46),
+        (224, 243, 248, 44),
+        (254, 224, 144, 46),
+        (244, 109, 67, 53),
+        (165, 0, 38, 58),
     ),
     # White throughout, as the source layer is; only the opacity is stretched.
     "clouds_new": (

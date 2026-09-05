@@ -27,18 +27,13 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    TextSelector,
 )
 
 from .api import OwmApiClient, OwmAuthError, OwmError, OwmRateLimitError
 from .const import (
-    CONF_BASEMAP_ATTRIBUTION,
-    CONF_BASEMAP_URL,
     CONF_CONTRAST_STRETCH_CLOUDS,
     CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
-    DEFAULT_BASEMAP_ATTRIBUTION,
-    DEFAULT_BASEMAP_URL,
     DEFAULT_CONTRAST_STRETCH_CLOUDS,
     DEFAULT_CONTRAST_STRETCH_TEMPERATURE,
     DEFAULT_LANGUAGE,
@@ -177,8 +172,9 @@ async def _async_validate(
 class OwmStartupOptionsFlow(OptionsFlow):
     """Handle the options flow.
 
-    Language, the basemap used behind the weather maps, and the contrast
-    stretch per layer. Forecast length,
+    Language and the contrast stretch per layer. The basemap is not
+    configurable: Home Assistant's own tile proxy is the one correct source,
+    it is free, and it ships with Home Assistant. Forecast length,
     air quality windows, map zoom and the poll interval are fixed: each is
     already at the value the Startup plan makes sensible.
     """
@@ -195,10 +191,6 @@ class OwmStartupOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     CONF_LANGUAGE: user_input[CONF_LANGUAGE],
-                    CONF_BASEMAP_URL: user_input[CONF_BASEMAP_URL].strip(),
-                    CONF_BASEMAP_ATTRIBUTION: user_input[
-                        CONF_BASEMAP_ATTRIBUTION
-                    ].strip(),
                     CONF_CONTRAST_STRETCH_TEMPERATURE: user_input[
                         CONF_CONTRAST_STRETCH_TEMPERATURE
                     ],
@@ -224,16 +216,6 @@ class OwmStartupOptionsFlow(OptionsFlow):
                             options=LANGUAGES, mode=SelectSelectorMode.DROPDOWN
                         )
                     ),
-                    vol.Optional(
-                        CONF_BASEMAP_URL,
-                        default=options.get(CONF_BASEMAP_URL, DEFAULT_BASEMAP_URL),
-                    ): TextSelector(),
-                    vol.Optional(
-                        CONF_BASEMAP_ATTRIBUTION,
-                        default=options.get(
-                            CONF_BASEMAP_ATTRIBUTION, DEFAULT_BASEMAP_ATTRIBUTION
-                        ),
-                    ): TextSelector(),
                     vol.Required(
                         CONF_CONTRAST_STRETCH_TEMPERATURE,
                         default=options.get(

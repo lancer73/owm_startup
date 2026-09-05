@@ -18,8 +18,14 @@ package root.
 from __future__ import annotations
 
 import logging
+import re
 
 REDACTED = "**REDACTED**"
+
+# Credential-looking query parameters, scrubbed by pattern rather than by
+# registering each value. Home Assistant's map tiles proxy rotates its access
+# token every 30 minutes, so registering them would grow without bound.
+_QUERY_SECRET = re.compile(r"(?i)\b(token|api[_-]?key|key|access_token)=[^&\s\"\']+")
 
 
 class SecretFilter(logging.Filter):
@@ -52,7 +58,12 @@ def redact(text: str) -> str:
     """Return `text` with every registered secret replaced."""
     for secret in SECRET_FILTER.secrets:
         text = text.replace(secret, REDACTED)
-    return text
+    return scrub_query_secrets(text)
+
+
+def scrub_query_secrets(text: str) -> str:
+    """Replace credential-looking query parameter values in a string."""
+    return _QUERY_SECRET.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
 
 
 def _package_loggers() -> list[logging.Logger]:
