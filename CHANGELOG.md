@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The test workflow now reports the Home Assistant version it resolved and
-  fails if it is older than the minimum in `hacs.json`. The test harness pins
-  whichever version it was built against, so a stale resolution would otherwise
-  produce a green run that says nothing about the supported version.
 
 ## [2.2.0] - 2026-09-05
 
@@ -40,6 +34,10 @@ version to 2026.9.0 and removes the last third-party dependency.
 - Weather map overlays are much less opaque. The new basemap carries far more
   detail and no colour of its own, so the overlay can sit lighter over it and
   still read clearly.
+- The test workflow reports the Home Assistant version it resolved and fails if
+  it is older than the minimum in `hacs.json`. The test harness pins whichever
+  version it was built against, so a stale resolution would otherwise produce a
+  green run that says nothing about the supported version.
 
 ### Fixed
 
