@@ -153,10 +153,25 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   translations. Add new strings to `legend.TRANSLATIONS` in every language
   there — a test enforces that the tables match. Keep the text ASCII-safe
   apart from "©": the bitmap fallback font cannot draw "·".
-- CARTO's raster basemaps need an API key as of August 2026, passed as `?key=`
-  in the tile URL, and are slated for retirement in favour of vector tiles that
-  this integration cannot composite. If they go, a different raster provider is
-  needed; do not switch the default to `tile.openstreetmap.org`.
+- A basemap URL starting with `/` is resolved against this instance and given
+  a fresh `map_tiles` access token per request. Never store that token in the
+  option or include it in the cache key: it rotates every thirty minutes.
+- The default basemap is Home Assistant's own tile proxy. Never switch it to
+  `tile.openstreetmap.org` directly: the proxy exists because their policy
+  wants an identifying User-Agent that a browser cannot send.
+- `RENDER_REVISION` keys two caches: stored animation frames and the basemap
+  tile directory. Anything cached in a transformed form has to key off it, or
+  the transform changes and the cache serves the old one until it expires.
+- Bump `RENDER_REVISION` whenever a change alters how a frame looks. Stored
+  frames carry it, plus the stretch setting, and are discarded on a mismatch;
+  without the bump an animation plays two styles at once.
+- The basemap is desaturated on purpose: the overlay carries the only colour on
+  the image. The hue rotation before it is not redundant, it redistributes
+  luminance so roads survive the conversion with more contrast.
+- The basemap source is a constant, not an option, and every tile is darkened
+  because the proxy serves exactly one known style. Do not reintroduce a
+  provider option: it drags an attribution option and a "is this already dark"
+  question along with it.
 - The basemap cache key includes a hash of the tile URL. Do not simplify it
   back to z/x/y: switching styles then silently reuses the old tiles.
 - The precipitation map was removed deliberately and completely. If it is ever
@@ -199,6 +214,14 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
   imported it, not on `homeassistant.helpers.aiohttp_client`.
 
 ## Testing
+
+The test harness pins whichever Home Assistant its own release was built
+against. If the local environment cannot reach current packages it will resolve
+an old one, and those runs then say nothing about the version in `hacs.json` —
+they catch logic regressions only. CI checks the resolved version against the
+floor and fails if it is behind, so a green Actions run is the authority. Say
+which version a local run used rather than implying it was the supported one.
+
 
 ```bash
 scripts/setup   # create .venv and install test dependencies

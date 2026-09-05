@@ -84,7 +84,7 @@ hourly forecast whose points are three hours apart, and cards, templates and
 
 ## Installation
 
-Requires Home Assistant 2024.11 or newer, and an API key on a plan that
+Requires Home Assistant 2026.9.0 or newer, and an API key on a plan that
 includes `/forecast/daily` — the free tier does not; Startup and above do. See
 [Getting a Startup plan](#getting-a-startup-plan) at the end.
 
@@ -103,44 +103,31 @@ Under **Configure** on the integration:
 | Option | Default |
 | --- | --- |
 | Language | `en` |
-| Basemap tile URL | CARTO dark (see below) |
-| Basemap attribution | © OpenStreetMap contributors © CARTO |
 | Stretch temperature map contrast | on |
 | Stretch cloud map contrast | off |
 
-Forecast length, air quality windows and the update interval are fixed. Each
-is already at the value the Startup plan supports, and exposing them only
-invited worse settings.
+That is the whole of it. Forecast length, air quality windows, the update
+interval and the basemap source are fixed: each is already at the only value
+that makes sense here, and exposing them would only invite a worse one.
 
-### The basemap needs a CARTO API key
+### The basemap
 
-Since 26 August 2026 CARTO requires an API key on its raster basemaps.
-Requests without one still return tiles, but they carry a repeated **"API KEY
-REQUIRED"** watermark — and this integration caches basemap tiles for 30 days
-and bakes them into 12 hours of animation frames, so an unkeyed watermark
-sticks around.
+The basemap comes from Home Assistant's own **map tiles integration**, which
+proxies OpenStreetMap's raster tiles server-side with an identifying
+User-Agent. That is what OSM's policy asks for and what a browser cannot send,
+so it is the one legitimate route to those tiles from here — and it needs no
+API key.
 
-1. Request a key at <https://carto.com/basemaps/apikey>. It is free within
-   their fair use limit, needs no CARTO account, and is emailed back
-   immediately.
-2. Append it to the basemap URL as a `key` parameter:
+There is nothing to configure. The proxy's access token rotates every thirty
+minutes and is added per request, so it is neither stored nor part of the tile
+cache key.
 
-   ```
-   https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=YOUR_KEY
-   ```
-
-Changing the URL changes the cache key, so watermarked tiles you already have
-are dropped and refetched. The key stays server-side and is redacted from this
-integration's logs.
-
-To skip the sign-up entirely, set the basemap URL to blank: the weather layers
-then render over a plain background, readable but with no coastlines or place
-names.
-
-**Do not point the basemap at `tile.openstreetmap.org`.** Their usage policy
-forbids distributing an application that fetches from their servers, and
-treats fetching tiles ahead of viewing them as bulk downloading. CARTO,
-MapTiler and Thunderforest all serve keyed raster tiles that are fine here.
+Those tiles are the light OpenStreetMap style in full colour, and these maps
+are drawn for a dark background where the overlay owns colour outright — a
+green field or a red motorway under a blue-to-red temperature ramp reads as
+data that is not there. Tiles are therefore **inverted, hue-rotated 180° and
+desaturated** on the way into the cache, once per tile rather than per render.
+Water, roads and labels stay separable by lightness.
 
 ### Contrast stretch
 
@@ -175,6 +162,12 @@ and the required attribution, and the cloud map also carries a wind arrow.
 
 Two more image entities animate the last 12 hours as animated WebP. They can
 go straight into a picture card; the browser plays them.
+
+Both the cached basemap tiles and the stored frames are tied to the renderer
+that made them. If the basemap, the
+palette or the contrast stretch changes, the old frames are discarded rather
+than played alongside the new ones — an animation that switches style halfway
+through reads as a fault.
 
 The animations build **forwards only** — Weather Maps 1.0 tiles have no time
 parameter, so there is nothing to backfill. A fresh install shows a single
@@ -502,9 +495,6 @@ place names are redacted.
 - **CO has no device class.** OpenWeather reports µg/m³ while Home Assistant's
   `carbon_monoxide` class expects ppm, so the sensor carries the unit without
   the class rather than mislabelling it.
-- **CARTO are retiring raster basemaps** in favour of vector tiles, which this
-  integration cannot composite. A different raster provider will be needed
-  when that lands.
 - **Recorder.** The AQI forecast sensors carry an hourly timeline attribute.
   Consider excluding them:
 

@@ -1,5 +1,11 @@
-# Pin to the pytest-homeassistant-custom-component release that matches the
-# Home Assistant version you develop against; the plugin pulls HA in itself.
+# Unpinned on purpose: the plugin pins the Home Assistant version it was built
+# against, so the latest release is the way to test against a current one. CI
+# checks that whatever resolves is at or above the floor in hacs.json, since a
+# stale resolution would produce a green run that proves nothing.
+#
+# A local environment without access to current packages will resolve something
+# much older. That still catches logic regressions, but says nothing about API
+# changes since; treat CI as the authority.
 pytest-homeassistant-custom-component
 pytest-cov
 ruff

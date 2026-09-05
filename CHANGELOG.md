@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The test workflow now reports the Home Assistant version it resolved and
+  fails if it is older than the minimum in `hacs.json`. The test harness pins
+  whichever version it was built against, so a stale resolution would otherwise
+  produce a green run that says nothing about the supported version.
+
+## [2.2.0] - 2026-09-05
+
+The basemap now comes from Home Assistant itself, which raises the minimum
+version to 2026.9.0 and removes the last third-party dependency.
+
+### Changed
+
+- **The basemap comes from Home Assistant's map tiles integration** rather than
+  CARTO, so there is no API key and no third-party terms. That integration
+  proxies OpenStreetMap's raster tiles server-side with an identifying
+  User-Agent, which is what their policy asks for and what a browser cannot
+  send. Its access token rotates every thirty minutes and is added per request,
+  so it neither lives in the stored option nor churns the tile cache.
+- Those tiles are the light OpenStreetMap style, so they are inverted,
+  hue-rotated and desaturated on the way into the cache. The weather overlay is
+  then the only thing on the image carrying colour: a green field or a red
+  motorway under a blue-to-red temperature ramp reads as data that is not
+  there.
+- **The basemap source and attribution options are gone.** There is one correct
+  source, it is free and it ships with Home Assistant, so a provider option
+  could only be set to something worse. Saved values are ignored.
+- **Minimum Home Assistant version is now 2026.9.0**, where the map tiles
+  integration arrived.
+- Weather map overlays are much less opaque. The new basemap carries far more
+  detail and no colour of its own, so the overlay can sit lighter over it and
+  still read clearly.
+
+### Fixed
+
+- Cached basemap tiles survived a change to the transform applied to them. The
+  tiles are stored already darkened, but the cache was keyed only on their
+  source, so changing that transform left the old form in place for the thirty
+  days of its lifetime. The render revision is now part of the cache directory
+  name, and stale directories are pruned on the next fetch.
+- Stored animation frames survived a change of renderer, so switching basemap
+  left the animation mixing old and new styles for up to twelve hours. Frames
+  now carry a signature covering the render revision and the contrast stretch,
+  and are discarded when it no longer matches.
+- Credential-looking query parameters are scrubbed from log messages by pattern
+  as well as by registered value. The proxy's rotating token could not be
+  registered without the secret set growing without bound.
+
 ## [2.1.1] - 2026-08-28
 
 ### Fixed
@@ -237,7 +286,8 @@ First stable release. Entity ids, attribute names and options changed from
   language.
 - English and Dutch translations.
 
-[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/lancer73/owm_startup/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/lancer73/owm_startup/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/lancer73/owm_startup/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/lancer73/owm_startup/compare/v1.0.0...v2.0.0
