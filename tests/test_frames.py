@@ -26,7 +26,7 @@ def _png(colour: tuple[int, int, int, int]) -> bytes:
 @pytest.fixture
 def store(hass: HomeAssistant, tmp_path: Path) -> FrameStore:
     """Return a store writing into a temporary directory."""
-    return FrameStore(hass, tmp_path, "clouds_new")
+    return FrameStore(hass, tmp_path, "clouds_new", "1:plain")
 
 
 def test_image_hash_ignores_the_container() -> None:
@@ -242,11 +242,12 @@ async def test_hashes_survive_a_restart(hass: HomeAssistant, tmp_path: Path) -> 
     Otherwise the first refresh after every restart fetches the full grid and
     stores a frame identical to the one already on disk.
     """
-    first = FrameStore(hass, tmp_path, "clouds_new")
+    first = FrameStore(hass, tmp_path, "clouds_new", "1:plain")
+    await first.async_load()
     first.probe_hash = "probe-1"
     await first.async_add(_png((1, 2, 3, 255)), "frame-1")
 
-    second = FrameStore(hass, tmp_path, "clouds_new")
+    second = FrameStore(hass, tmp_path, "clouds_new", "1:plain")
     await second.async_load()
 
     assert second.probe_hash == "probe-1"
@@ -341,3 +342,50 @@ async def test_last_frame_is_held_longer(store: FrameStore, freezer) -> None:
     assert len(durations) == 4
     assert durations[:3] == [ANIMATION_FRAME_MS] * 3
     assert durations[-1] == ANIMATION_FRAME_MS * ANIMATION_HOLD_FACTOR
+
+
+async def test_frames_from_a_different_renderer_are_discarded(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A basemap or palette change makes stored frames unplayable.
+
+    Mixing them into the animation reads as a fault: the map jumps style
+    halfway through.
+    """
+    old = FrameStore(hass, tmp_path, "clouds_new", "1:plain")
+    await old.async_add(_png((1, 2, 3, 255)), "frame-1")
+    assert len(old.frames()) == 1
+
+    new = FrameStore(hass, tmp_path, "clouds_new", "2:plain")
+    await new.async_load()
+
+    assert new.frames() == []
+    assert new.frame_hash is None
+    assert new.probe_hash is None
+
+
+async def test_toggling_the_stretch_discards_frames(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """The stretch changes the look as much as a palette change does."""
+    stretched = FrameStore(hass, tmp_path, "temp_new", "2:stretched")
+    await stretched.async_add(_png((1, 2, 3, 255)), "frame-1")
+
+    plain = FrameStore(hass, tmp_path, "temp_new", "2:plain")
+    await plain.async_load()
+
+    assert plain.frames() == []
+
+
+async def test_matching_signature_keeps_the_frames(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An ordinary restart must not throw the sequence away."""
+    first = FrameStore(hass, tmp_path, "temp_new", "2:stretched")
+    await first.async_add(_png((1, 2, 3, 255)), "frame-1")
+
+    second = FrameStore(hass, tmp_path, "temp_new", "2:stretched")
+    await second.async_load()
+
+    assert len(second.frames()) == 1
+    assert second.frame_hash == "frame-1"

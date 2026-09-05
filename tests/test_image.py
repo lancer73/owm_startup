@@ -8,7 +8,6 @@ from unittest.mock import patch
 import pytest
 
 from custom_components.owm_startup.api import OwmConnectionError
-from custom_components.owm_startup.const import CONF_BASEMAP_URL
 from custom_components.owm_startup.image import tile_grid
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -160,22 +159,6 @@ async def test_tile_failure_yields_no_image(
     assert response.status == 500
 
 
-async def test_basemap_can_be_disabled(
-    hass: HomeAssistant, hass_client, config_entry, mock_api, mock_tiles
-) -> None:
-    """With no basemap configured the overlay is still served."""
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, options={CONF_BASEMAP_URL: ""})
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    client = await hass_client()
-    state = hass.states.get(TEMPERATURE)
-    response = await client.get(state.attributes["entity_picture"])
-    assert response.status == 200
-    assert (await response.read()).startswith(b"\x89PNG")
-
-
 def test_every_layer_has_a_legend() -> None:
     """Each rendered layer must have a documented colour scale."""
     from custom_components.owm_startup.const import LEGENDS
@@ -193,14 +176,6 @@ def test_every_layer_has_a_legend() -> None:
         # Stops must be numeric and ascending for range detection to work.
         values = [value for value, _ in legend["stops"]]
         assert values == sorted(values)
-
-
-def test_default_basemap_is_dark_and_not_openstreetmap() -> None:
-    """The default must suit the overlays and respect the OSM tile policy."""
-    from custom_components.owm_startup.const import DEFAULT_BASEMAP_URL
-
-    assert "dark" in DEFAULT_BASEMAP_URL
-    assert "tile.openstreetmap.org" not in DEFAULT_BASEMAP_URL
 
 
 def test_legend_is_drawn_below_the_map(hass: HomeAssistant) -> None:
@@ -270,11 +245,11 @@ def test_contrast_stretch_changes_the_render(hass: HomeAssistant) -> None:
         )
 
     # Three degrees of OpenWeather palette is nearly one colour; stretched it
-    # should cross a good part of the ramp. The threshold allows for the
-    # overlay opacity, which is deliberately low so the basemap reads through:
-    # raising it would make this test pass and the maps worse.
-    assert spread(plain) < 60
-    assert spread(boosted) > 75
+    # crosses a good part of the ramp. Compared as a ratio rather than against
+    # a fixed number: both figures scale with the overlay opacity, which is
+    # tuned for legibility, and an absolute threshold turns every opacity
+    # change into a test failure that says nothing about the stretch.
+    assert spread(boosted) > spread(plain) * 3
 
 
 async def test_map_tiles_are_fetched_concurrently(
@@ -1206,3 +1181,196 @@ def test_a_smooth_gradient_is_not_flagged() -> None:
 
     tiles = {(dx, dy): ramp(dy) for dx in range(3) for dy in range(3)}
     assert _seam_detected(tiles, stretch=True) is False
+
+
+async def test_basemap_path_resolves_against_this_instance(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """Resolve the tile path against this instance, with a token.
+
+    The proxy's token rotates every thirty minutes, so it is added per
+    request rather than stored.
+    """
+    from custom_components.owm_startup.const import BASEMAP_PATH
+
+    hass.data["map_tiles"] = ["older-token", "current-token"]
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+
+    resolved = entity._resolve_tile_url(BASEMAP_PATH.format(z=8, x=130, y=83))
+
+    assert resolved is not None
+    assert resolved.endswith("/api/map_tiles/raster/8/130/83.png?token=current-token")
+    assert resolved.startswith("http")
+
+
+async def test_missing_tile_proxy_drops_the_basemap(
+    hass: HomeAssistant, setup_integration, mock_tiles, caplog
+) -> None:
+    """Without the proxy loaded there is no token, so no basemap.
+
+    Better a bare map than nine unauthenticated requests that all 403.
+    """
+    hass.data.pop("map_tiles", None)
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+
+    assert entity._resolve_tile_url("/api/map_tiles/raster/8/130/83.png") is None
+    assert "map tiles integration is not loaded" in caplog.text
+
+
+def test_darken_turns_a_light_tile_dark(hass: HomeAssistant) -> None:
+    """The proxy serves the light OSM style; these maps need a dark backdrop."""
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from custom_components.owm_startup.image import _darken
+
+    tile = Image.new("RGB", (64, 64), (242, 239, 233))
+    draw = ImageDraw.Draw(tile)
+    draw.rectangle([0, 40, 63, 63], fill=(170, 211, 223))  # water
+    draw.rectangle([4, 4, 24, 20], fill=(200, 250, 204))  # park
+    buffer = io.BytesIO()
+    tile.save(buffer, format="PNG")
+
+    with Image.open(io.BytesIO(_darken(buffer.getvalue()))) as dark:
+        land = dark.getpixel((40, 30))
+        water = dark.getpixel((30, 55))
+        park = dark.getpixel((10, 10))
+
+    # Land goes dark, and water and parks stay separable from it by lightness
+    # now that the hue is gone.
+    assert sum(land) < 120, land
+    assert water[0] > land[0], (land, water)
+    assert park[0] > land[0], (land, park)
+
+
+def test_the_basemap_source_is_not_configurable() -> None:
+    """One correct source, shipped with Home Assistant and free.
+
+    A provider option could only be set to something worse, and would drag an
+    attribution option along with it.
+    """
+    from custom_components.owm_startup import const
+
+    assert const.BASEMAP_PATH.startswith("/api/map_tiles/raster/")
+    assert const.BASEMAP_ATTRIBUTION == "© OpenStreetMap contributors"
+    assert not [name for name in dir(const) if "CONF_BASEMAP" in name]
+
+
+async def test_basemap_tiles_are_darkened_before_caching(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """The proxy serves the light OSM style; the cache holds the dark form."""
+    from pathlib import Path
+
+    from PIL import Image
+
+    from custom_components.owm_startup.const import BASEMAP_CACHE_STYLE, DOMAIN
+
+    hass.data["map_tiles"] = ["token"]
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()
+
+    directory = Path(
+        hass.config.path(".storage", f"{DOMAIN}_basemap", BASEMAP_CACHE_STYLE)
+    )
+    cached = next(iter(sorted(directory.glob("*.png")))).read_bytes()
+
+    with Image.open(io.BytesIO(cached)) as tile:
+        # The fixture serves a light grey tile; what is stored must be dark.
+        assert sum(tile.convert("RGB").getpixel((10, 10))) < 200
+
+
+def test_darkened_basemap_carries_no_colour(hass: HomeAssistant) -> None:
+    """The overlay must be the only thing on the image with a hue.
+
+    A green field or a red motorway under a blue-to-red temperature ramp reads
+    as data that is not there.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from custom_components.owm_startup.image import _darken
+
+    # OpenStreetMap standard colours: land, water, forest, motorway.
+    tile = Image.new("RGB", (64, 64), (242, 239, 233))
+    draw = ImageDraw.Draw(tile)
+    draw.rectangle([0, 40, 63, 63], fill=(170, 211, 223))
+    draw.rectangle([2, 2, 20, 20], fill=(173, 209, 158))
+    draw.line([(0, 30), (63, 30)], fill=(232, 146, 162), width=4)
+    buffer = io.BytesIO()
+    tile.save(buffer, format="PNG")
+
+    with Image.open(io.BytesIO(_darken(buffer.getvalue()))) as dark:
+        pixels = list(dark.convert("RGB").getdata())
+
+    assert all(red == green == blue for red, green, blue in pixels), "not greyscale"
+    # And it is dark, not merely grey.
+    assert sum(pixels[64 * 35 + 40]) < 150
+
+
+def test_darkened_basemap_keeps_its_features_apart(hass: HomeAssistant) -> None:
+    """Desaturating must not flatten the map into one shade.
+
+    Water, roads and labels are distinguished by lightness once the hue is
+    gone, so the separation between them has to survive.
+    """
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from custom_components.owm_startup.image import _darken
+
+    tile = Image.new("RGB", (64, 64), (242, 239, 233))
+    draw = ImageDraw.Draw(tile)
+    draw.rectangle([0, 40, 63, 63], fill=(170, 211, 223))
+    draw.line([(0, 20), (63, 20)], fill=(232, 146, 162), width=6)
+    buffer = io.BytesIO()
+    tile.save(buffer, format="PNG")
+
+    with Image.open(io.BytesIO(_darken(buffer.getvalue()))) as dark:
+        rgb = dark.convert("RGB")
+        land = rgb.getpixel((32, 33))[0]
+        water = rgb.getpixel((32, 50))[0]
+        motorway = rgb.getpixel((32, 20))[0]
+
+    assert water > land + 20, (land, water)
+    assert motorway > water, (water, motorway)
+
+
+def test_basemap_cache_is_keyed_on_the_render_revision() -> None:
+    """The cache holds transformed tiles, so the transform is part of the key.
+
+    Keying only on the source let darkened-differently tiles survive a change
+    to the transform for the thirty days of their lifetime.
+    """
+    from custom_components.owm_startup.const import (
+        BASEMAP_CACHE_STYLE,
+        RENDER_REVISION,
+    )
+
+    assert BASEMAP_CACHE_STYLE.endswith(f"-r{RENDER_REVISION}")
+
+
+async def test_stale_basemap_tiles_are_pruned_after_a_revision_bump(
+    hass: HomeAssistant, setup_integration, mock_tiles
+) -> None:
+    """Tiles from an earlier revision must not be served or left behind."""
+    from pathlib import Path
+
+    from custom_components.owm_startup.const import BASEMAP_CACHE_STYLE, DOMAIN
+
+    root = Path(hass.config.path(".storage", f"{DOMAIN}_basemap"))
+    stale = root / "osm-r1"
+    stale.mkdir(parents=True, exist_ok=True)
+    (stale / "8_130_83.png").write_bytes(b"an old, colourful tile")
+
+    hass.data["map_tiles"] = ["token"]
+    entity = hass.data["image"].get_entity(TEMPERATURE)
+    entity._rendered = None
+    await entity.async_image()
+
+    assert not stale.exists(), "the previous revision's tiles were left behind"
+    assert (root / BASEMAP_CACHE_STYLE).exists()

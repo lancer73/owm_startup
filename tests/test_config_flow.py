@@ -6,13 +6,9 @@ from unittest.mock import patch
 
 from custom_components.owm_startup.api import OwmAuthError, OwmConnectionError
 from custom_components.owm_startup.const import (
-    CONF_BASEMAP_ATTRIBUTION,
-    CONF_BASEMAP_URL,
     CONF_CONTRAST_STRETCH_CLOUDS,
     CONF_CONTRAST_STRETCH_TEMPERATURE,
     CONF_LANGUAGE,
-    DEFAULT_BASEMAP_ATTRIBUTION,
-    DEFAULT_BASEMAP_URL,
     DOMAIN,
 )
 from homeassistant.config_entries import SOURCE_USER
@@ -94,8 +90,6 @@ async def test_options_flow(hass: HomeAssistant, setup_integration) -> None:
 
     assert set(result["data_schema"].schema) == {
         CONF_LANGUAGE,
-        CONF_BASEMAP_URL,
-        CONF_BASEMAP_ATTRIBUTION,
         CONF_CONTRAST_STRETCH_CLOUDS,
         CONF_CONTRAST_STRETCH_TEMPERATURE,
     }
@@ -104,8 +98,6 @@ async def test_options_flow(hass: HomeAssistant, setup_integration) -> None:
         result["flow_id"],
         {
             CONF_LANGUAGE: "nl",
-            CONF_BASEMAP_URL: DEFAULT_BASEMAP_URL,
-            CONF_BASEMAP_ATTRIBUTION: DEFAULT_BASEMAP_ATTRIBUTION,
             CONF_CONTRAST_STRETCH_TEMPERATURE: True,
             CONF_CONTRAST_STRETCH_CLOUDS: False,
         },

@@ -132,52 +132,28 @@ async def test_diagnostics_contains_useful_state(
     assert result["data"]["daily_first"]["temp"]["max"] == 21.7
 
 
-def test_basemap_url_secrets_are_recognised() -> None:
-    """A key in the basemap URL must be scrubbed like the OpenWeather one.
+def test_rotating_tokens_are_scrubbed_by_pattern() -> None:
+    """The proxy token rotates twice an hour, so registering each would grow.
 
-    CARTO's raster basemaps take the key as a query parameter, and aiohttp
-    transport errors can quote the URL they failed on.
+    Pattern scrubbing catches them without an unbounded secret set.
     """
-    from custom_components.owm_startup.image import _url_secrets
+    from custom_components.owm_startup.redaction import scrub_query_secrets
 
-    assert _url_secrets(
-        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=SECRET"
-    ) == ["SECRET"]
-    assert _url_secrets("https://tiles.example/{z}/{x}/{y}.png?api_key=SECRET") == [
-        "SECRET"
-    ]
-    # Nothing credential-like, nothing registered.
-    assert (
-        _url_secrets("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png") == []
-    )
-    assert _url_secrets("https://tiles.example/{z}/{x}/{y}.png?style=dark") == []
+    message = "Cannot connect to /api/map_tiles/raster/8/130/83.png?token=abc123"
+    scrubbed = scrub_query_secrets(message)
+
+    assert "abc123" not in scrubbed
+    assert REDACTED in scrubbed
+    # And the path survives, so the log still says what failed.
+    assert "/api/map_tiles/raster/8/130/83.png" in scrubbed
 
 
-async def test_basemap_key_is_scrubbed_from_logs(
-    hass: HomeAssistant, config_entry, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Reading the option registers the key, so later logs cannot carry it."""
-    from custom_components.owm_startup.const import CONF_BASEMAP_URL
-    from custom_components.owm_startup.image import MAP_TYPES, OwmMapImage
+def test_query_scrubbing_covers_the_usual_parameter_names() -> None:
+    """A provider key must not survive because it is spelled differently."""
+    from custom_components.owm_startup.redaction import scrub_query_secrets
 
-    caplog.set_level(logging.DEBUG)
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry,
-        options={
-            CONF_BASEMAP_URL: (
-                "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=CARTOKEY"
-            )
-        },
-    )
+    for name in ("key", "api_key", "apikey", "api-key", "token", "access_token"):
+        assert "SECRET" not in scrub_query_secrets(f"https://x/y.png?{name}=SECRET")
 
-    entity = object.__new__(OwmMapImage)
-    entity._entry = config_entry
-    entity.entity_description = MAP_TYPES[0]
-    assert "CARTOKEY" in entity._basemap_url
-
-    logging.getLogger("custom_components.owm_startup.image").warning(
-        "Could not fetch basemap tile: Cannot connect to host with key=CARTOKEY"
-    )
-    assert "CARTOKEY" not in caplog.text
-    assert REDACTED in caplog.text
+    # Something innocuous is left readable.
+    assert "dark" in scrub_query_secrets("https://x/y.png?style=dark")
