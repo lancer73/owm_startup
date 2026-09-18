@@ -349,7 +349,14 @@ class OwmAirQualityForecastSensor(OwmAirBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the peak time and, for the index, the full timeline."""
+        """Return the window details and its forecast.
+
+        Every forecast sensor carries what there is to plot under `forecast`,
+        as a list, so a chart reads the same attribute the same way whichever
+        one it points at. For the index that list is the hourly timeline; for
+        a pollutant it is the single peak, which is all this integration
+        reports two days out, and it is empty when the window holds nothing.
+        """
         component = self.entity_description.component
         window = self._window()
         peak_at: str | None = None
@@ -367,9 +374,9 @@ class OwmAirQualityForecastSensor(OwmAirBaseSensor):
             "window": self._slug,
             "window_start": start.isoformat(),
             "window_end": end.isoformat(),
-            "peak_at": peak_at,
         }
         if component == AQI_KEY:
+            attributes["peak_at"] = peak_at
             attributes["level"] = (
                 AQI_LABELS.get(peak_value) if peak_value is not None else None
             )
@@ -382,6 +389,10 @@ class OwmAirQualityForecastSensor(OwmAirBaseSensor):
                 }
                 for entry in window
             ]
+        elif peak_at is None:
+            attributes["forecast"] = []
+        else:
+            attributes["forecast"] = [{"peak_at": peak_at, "value": peak_value}]
         return attributes
 
 
@@ -461,9 +472,13 @@ class OwmAirQualityForecastLabelSensor(OwmAirQualityForecastSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the window details, plus the number the band came from."""
+        """Return the window details, plus the number the band came from.
+
+        A pollutant's peak already sits inside `forecast`; only the index
+        needs its number lifting out, next to the timeline it summarises.
+        """
         attributes = dict(super().extra_state_attributes)
-        key = "index" if self.entity_description.component == AQI_KEY else "value"
-        attributes[key] = super().native_value
-        attributes.pop("level", None)
+        if self.entity_description.component == AQI_KEY:
+            attributes["index"] = super().native_value
+            attributes.pop("level", None)
         return attributes
