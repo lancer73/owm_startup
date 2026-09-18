@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [2.3.0] - 2026-09-18
+
+Pre-release. The forecast attribute layout changes shape, so this goes out for
+testing on a live instance before it is promoted; mark the GitHub release as a
+pre-release so HACS only offers it to users who have opted into those.
+
+### Changed
+
+- **Breaking: the pollutant forecast band sensors carry their peak under a
+  `forecast` attribute** instead of at the top level, as a list holding one
+  `{peak_at, value}` entry — empty when the window is. Every forecast sensor
+  now exposes whatever it can chart under the same attribute, in the same
+  shape: for the index the hourly timeline, for a pollutant the single peak, so
+  a chart or template can map over either without knowing which it has. A
+  dashboard reading `attributes.value` or `attributes.peak_at` on one of these
+  sensors needs updating to map `attributes.forecast`; the README chart example
+  has been. The index sensors and the current-reading band sensors are
+  unchanged.
+
+### Fixed
+
+- The chart test now also holds the empty-window case, so the empty list the
+  README example maps over cannot silently become a null entry.
+
+
 ## [2.2.0] - 2026-09-05
 
 The basemap now comes from Home Assistant itself, which raises the minimum
@@ -284,7 +309,8 @@ First stable release. Entity ids, attribute names and options changed from
   language.
 - English and Dutch translations.
 
-[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/lancer73/owm_startup/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/lancer73/owm_startup/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/lancer73/owm_startup/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/lancer73/owm_startup/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/lancer73/owm_startup/compare/v2.0.0...v2.1.0

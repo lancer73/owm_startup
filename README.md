@@ -36,9 +36,10 @@ pollutant.
 
 **Forecasts are bands only.** A microgram figure two days out reads as a
 precision the model does not have, while "Moderate tomorrow" is something you
-can act on. The peak concentration behind each forecast band is still there as
-an attribute, along with `peak_at` and the window bounds. Current readings stay
-numeric so they can be graphed and kept in long-term statistics.
+can act on. The peak concentration behind each forecast band is still there, as
+the one entry in the `forecast` attribute with `value` and `peak_at`, alongside
+the window bounds. Current readings stay numeric so they can be graphed and kept
+in long-term statistics.
 
 Forecast windows are **local calendar days**. Today's runs from now to
 midnight, so it shortens through the day and reads `unknown` once the day is
@@ -283,11 +284,11 @@ series:
 
 ### Charting a single pollutant
 
-The other pollutants have no hourly timeline — their band sensors expose the
-window's peak and the time it falls, and nothing between. That still charts
-usefully: a continuous measured line, then one marked point per forecast
-window. Put one per pollutant on a page and the pattern across them reads at a
-glance.
+The other pollutants have no hourly timeline — their `forecast` attribute holds
+a single entry, the window's peak as `value` and the time it falls as `peak_at`,
+and nothing between. That still charts usefully: a continuous measured line,
+then one marked point per forecast window. Put one per pollutant on a page and
+the pattern across them reads at a glance.
 
 ```yaml
 type: custom:apexcharts-card
@@ -374,26 +375,20 @@ series:
     stroke_width: 0
     extend_to: false
     data_generator: |
-      const value = entity.attributes.value;
-      const at = entity.attributes.peak_at;
-      // Late in the day today's window can be empty, and there is then no
-      // peak to plot.
-      if (value == null || !at) {
-        return [];
-      }
-      return [[new Date(at).getTime(), value]];
+      // Late in the day today's window can be empty, and the list is then
+      // empty too, which plots as no dot rather than as a gap.
+      return (entity.attributes.forecast || []).map((point) => {
+        return [new Date(point.peak_at).getTime(), point.value];
+      });
   - entity: sensor.zoetermeer_pm2_5_level_tomorrow
     name: Peak tomorrow
     type: line
     stroke_width: 0
     extend_to: false
     data_generator: |
-      const value = entity.attributes.value;
-      const at = entity.attributes.peak_at;
-      if (value == null || !at) {
-        return [];
-      }
-      return [[new Date(at).getTime(), value]];
+      return (entity.attributes.forecast || []).map((point) => {
+        return [new Date(point.peak_at).getTime(), point.value];
+      });
 ```
 
 - The forecast series are `type: line` with `stroke_width: 0`, so a single

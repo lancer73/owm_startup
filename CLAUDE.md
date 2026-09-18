@@ -62,9 +62,13 @@ OpenWeatherMap's classic 2.5 collection on a Startup-or-higher subscription.
 - The NH3 boundaries come from RIVM/CLO measurements; the NO boundaries are
   derived from the RIVM NOx-minus-NO2 difference and are the weaker of the two.
   If better NO figures turn up, update the constant and the citation together.
-- The `forecast` attribute on the AQI band sensors is a documented interface:
-  the README's chart example reads `datetime` and `aqi` from it by name. There
-  is a test holding that shape; renaming either key breaks the example.
+- Every forecast band sensor exposes what it can chart under `forecast`, always
+  as a list, and that attribute is a documented interface the README's chart
+  examples map over by name: `{datetime, aqi}` entries on the AQI sensors, a
+  single `{peak_at, value}` entry on the pollutant ones. An empty window is an
+  empty list, never an entry of nulls — the examples map, they do not guard.
+  Keep the list shape on both: it is what lets one chart pattern serve either.
+  Tests hold both, and renaming any key breaks an example.
 - Forecasts are bands, current readings are numbers. Do not add numeric
   forecast sensors back: a microgram figure two days out is false precision,
   and the peak value is already an attribute.
