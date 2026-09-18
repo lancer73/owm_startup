@@ -183,6 +183,11 @@ def _forecast_sensor(coordinator, description, day_offset):
     return sensor
 
 
+def _description(key):
+    """Return the sensor description for one component key."""
+    return next(item for item in SENSOR_TYPES if item.key == key)
+
+
 @pytest.mark.parametrize(
     ("frozen_time", "expected_today"),
     [
@@ -235,6 +240,11 @@ async def test_today_window_empty_late_at_night(hass: HomeAssistant, freezer) ->
     assert today._window() == []
     assert today.native_value is None
     assert today.extra_state_attributes["peak_at"] is None
+
+    # A pollutant keeps the attribute and empties the list, so the README
+    # chart maps over nothing rather than plotting a null point.
+    pollutant = _forecast_sensor(coordinator, _description("pm2_5"), 0)
+    assert pollutant.extra_state_attributes["forecast"] == []
 
 
 @pytest.mark.parametrize(
@@ -425,17 +435,25 @@ async def test_pollutant_band_attributes_match_the_documented_chart_example(
     """The second README chart plots one point per window from these names.
 
     A pollutant band has no hourly timeline, so the peak and its time are the
-    whole of what can be charted; renaming either would break the example
-    silently.
+    whole of what can be charted; they sit under `forecast` like the index's
+    timeline does, and the example maps that list without knowing which sensor
+    it is on. Renaming either field, or handing back anything but a list, would
+    break the example silently.
     """
     for day in ("today", "tomorrow"):
         state = hass.states.get(f"sensor.zoetermeer_pm2_5_level_{day}")
 
-        assert "forecast" not in state.attributes, "pollutants carry no timeline"
-        assert isinstance(state.attributes["value"], (int, float))
-        peak_at = dt_util.parse_datetime(state.attributes["peak_at"])
+        forecast = state.attributes["forecast"]
+        assert isinstance(forecast, list), "the example maps over this"
+        assert len(forecast) == 1, "a pollutant reports one peak per window"
+        assert isinstance(forecast[0]["value"], (int, float))
+        peak_at = dt_util.parse_datetime(forecast[0]["peak_at"])
         assert peak_at is not None
         assert peak_at.tzinfo is not None
+
+        # Nothing is left at the top level for an old chart to keep reading.
+        assert "value" not in state.attributes
+        assert "peak_at" not in state.attributes
 
 
 async def test_pollutant_annotations_match_the_band_table(
